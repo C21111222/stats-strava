@@ -1792,7 +1792,7 @@ async function api(path, opts) {
   if (STATIC) {
     if (opts?.method === "POST") return {};
     const name = path.split("?")[0].replace(/^\/api\//, "");
-    const r = await fetch(`data/${name}.json`);
+    const r = await fetch(`data/${name}.json`, { cache: "no-cache" }); // données toujours à jour après une publication
     return r.ok ? r.json() : {};
   }
   const r = await fetch(path, opts);
