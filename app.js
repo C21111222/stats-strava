@@ -679,7 +679,7 @@ const FC_GROUPS = {
   trail: { label: "trail", sports: ["TrailRun"], pace: true, effort: true, range: [150, 900] },
   ride: { label: "vélo", sports: ["Ride", "GravelRide", "MountainBikeRide", "VirtualRide"], pace: false, range: [8, 55] },
 };
-const fcState = { group: "run", since: localStorage.getItem("fcSince") || "2025-12-22", until: "", flat: true, detail: "km", skipFirst: true, flatOnly: true };
+const fcState = { recent: 5, group: "run", since: localStorage.getItem("fcSince") || "2025-12-22", until: "", flat: true, detail: "km", skipFirst: true, flatOnly: true };
 let SPLITS = null, KMJOB = null, kmPoll = null;
 
 async function loadSplits() {
@@ -910,9 +910,15 @@ function renderFc() {
   const bin = (d) => Math.min(3, Math.floor(((d - t0) / (t1 - t0 || 1)) * 4));
   const binColor = ["var(--seq-2)", "var(--seq-3)", "var(--seq-4)", "var(--seq-5)"];
   el(s, "line", { x1: sx(xmin), y1: sy(reg.a + reg.b * xmin), x2: sx(xmax), y2: sy(reg.a + reg.b * xmax), stroke: "var(--series-2)", "stroke-width": 2, "stroke-dasharray": "6 4" });
-  for (const p of pts.slice().sort((a, b) => a.a.date - b.a.date)) {
+  // les N dernières sorties : dessinées par-dessus, en sombre, avec un numéro (1 = la plus récente)
+  const recentActs = [...new Map(pts.map((p) => [p.a.id, p.a])).values()].sort((a, b) => b.date - a.date).slice(0, fcState.recent);
+  const recentIds = new Set(recentActs.map((a) => a.id));
+  const order = pts.slice().sort((a, b) => (recentIds.has(a.a.id) - recentIds.has(b.a.id)) || a.a.date - b.a.date);
+  for (const p of order) {
     const gap = p.y - (reg.a + reg.b * p.x);
-    const dot = el(s, "circle", { cx: sx(p.x), cy: sy(p.y), r: KM ? 3 : 5, fill: binColor[bin(p.a.date)], stroke: "var(--surface-1)", "stroke-width": KM ? 0.5 : 1.5, style: "cursor:pointer" });
+    const isRecent = recentIds.has(p.a.id);
+    const dot = el(s, "circle", { cx: sx(p.x), cy: sy(p.y), r: isRecent ? (KM ? 4 : 6) : KM ? 3 : 5, fill: isRecent ? "var(--text-primary)" : binColor[bin(p.a.date)],
+      "fill-opacity": isRecent || !recentIds.size ? 1 : 0.55, stroke: "var(--surface-1)", "stroke-width": KM ? 0.5 : 1.5, style: "cursor:pointer" });
     dot.addEventListener("mousemove", (e) => showTip(e, `<b>${esc(p.a.name)}${p.km ? " · km " + p.km : ""}</b>${fmtDate(p.a.date)} · ${fmtNum(p.a.distance / 1000, 1)} km${p.a.elevation ? " · " + fmtNum(p.a.elevation, 0) + " m D+" : ""}
       <div class="row"><span>${g.pace ? "Allure" : "Vitesse"}</span><span>${fmtX(p.x)}</span></div>
       <div class="row"><span>FC moyenne</span><span>${Math.round(p.y)} bpm</span></div>
@@ -920,14 +926,39 @@ function renderFc() {
     dot.addEventListener("mouseleave", hideTip);
     dot.addEventListener("click", () => window.open(stravaLink(p.a), "_blank", "noopener"));
   }
+  // numéro de chaque sortie récente, posé sur son point (ou au centre de ses km)
+  const recentInfo = recentActs.map((a, i) => {
+    const mine = pts.filter((p) => p.a.id === a.id);
+    const x = mine.reduce((t, p) => t + p.x, 0) / mine.length, y = mine.reduce((t, p) => t + p.y, 0) / mine.length;
+    return { a, n: i + 1, x, y, gap: y - (reg.a + reg.b * x) };
+  });
+  for (const r of recentInfo.slice().reverse()) {
+    const g0 = el(s, "g", { style: "cursor:pointer" });
+    el(g0, "circle", { cx: sx(r.x), cy: sy(r.y) - (KM ? 0 : 13), r: 9, fill: "var(--text-primary)", stroke: "var(--surface-1)", "stroke-width": 2 });
+    el(g0, "text", { x: sx(r.x), y: sy(r.y) - (KM ? 0 : 13) + 4, "text-anchor": "middle", style: "fill:var(--surface-1);font-weight:700;font-size:11px" }, r.n);
+    g0.addEventListener("mousemove", (e) => showTip(e, `<b>${r.n === 1 ? "Dernière sortie" : r.n + "e plus récente"}</b>${esc(r.a.name)} · ${fmtDate(r.a.date)}
+      <div class="row"><span>${g.pace ? "Allure" : "Vitesse"}${KM ? " moyenne des km" : ""}</span><span>${fmtX(r.x)}</span></div>
+      <div class="row"><span>FC moyenne</span><span>${Math.round(r.y)} bpm</span></div>
+      <div class="row"><span>Écart à la tendance</span><span>${(r.gap >= 0 ? "+" : "") + fmtNum(r.gap, 0)} bpm</span></div>`));
+    g0.addEventListener("mouseleave", hideTip);
+    g0.addEventListener("click", () => window.open(stravaLink(r.a), "_blank", "noopener"));
+  }
   c.appendChild(s);
   const fmtMonth = (d) => `${MONTHS[new Date(d).getMonth()]} ${new Date(d).getFullYear()}`;
   const leg = document.createElement("div");
   leg.className = "legend";
   leg.innerHTML = `<span>${fmtMonth(t0)}</span>` + binColor.map((col) => `<span><i style="width:10px;height:10px;border-radius:50%;background:${col}"></i></span>`).join("") +
     `<span>${fmtMonth(t1)}</span><span><i style="background:var(--series-2)"></i>tendance</span>` +
+    (recentInfo.length ? `<span><i style="width:10px;height:10px;border-radius:50%;background:var(--text-primary)"></i>${recentInfo.length} dernières sorties</span>` : "") +
     `<span class="muted">Sous la ligne : FC plus basse que d'habitude pour cette allure. Clic sur un point : la sortie sur Strava.</span>`;
   c.appendChild(leg);
+  if (recentInfo.length) {
+    const lst = document.createElement("div");
+    lst.className = "recent-list";
+    lst.innerHTML = recentInfo.map((r) => `<div><span class="n">${r.n}</span><a href="${stravaLink(r.a)}" target="_blank" rel="noopener" title="${esc(r.a.name)}">${fmtDate(r.a.date)} · ${esc(r.a.name)}</a>
+      <span class="gap">${fmtX(r.x)} · ${Math.round(r.y)} bpm · ${r.gap >= 0 ? "+" : ""}${fmtNum(r.gap, 0)}</span></div>`).join("");
+    c.appendChild(lst);
+  }
 
   // ---- évolution mois par mois ----
   $("#fcTrendTitle").textContent = `FC estimée à ${fmtX(xref)}, mois par mois`;
@@ -999,6 +1030,13 @@ $("#fcSince").addEventListener("change", (e) => {
   renderFc();
 });
 $("#fcFlat").addEventListener("change", (e) => { fcState.flat = e.target.checked; renderFc(); });
+$("#fcRecent").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  fcState.recent = +b.dataset.n;
+  e.currentTarget.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+  renderFc();
+});
 $("#fcFirst").addEventListener("change", (e) => { fcState.skipFirst = e.target.checked; renderFc(); });
 $("#fcFlatOnly").addEventListener("change", (e) => { fcState.flatOnly = e.target.checked; renderFc(); });
 $("#fcDetail").addEventListener("click", (e) => {

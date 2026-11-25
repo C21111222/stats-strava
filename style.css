@@ -375,3 +375,12 @@ body.lite .needs-detail { display: none !important; }
 /* site public (export statique) : lecture seule */
 body.static .km-status, body.static .jobs, body.static .side-actions { display: none !important; }
 body.nonames .needs-names, body.nogps .needs-gps { display: none !important; }
+
+body.static .hide-public { display: none !important; }
+/* dernières sorties sur le nuage FC / allure */
+.recent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 18px; margin-top: 12px; font-size: 13px; }
+.recent-list div { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.recent-list .n { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--text-primary); color: var(--surface-1); font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.recent-list a { color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-list a:hover { color: var(--accent); }
+.recent-list .gap { flex: none; color: var(--muted); }

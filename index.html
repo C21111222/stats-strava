@@ -227,6 +227,15 @@
             <label class="toggle" id="fcFirstWrap" title="La FC met quelques minutes à monter : le 1er km la sous-estime"><input id="fcFirst" type="checkbox" checked><span></span>Sans le 1er km</label>
             <label class="toggle" id="fcFlatOnlyWrap" hidden title="À vélo, la vitesse dépend surtout de la pente"><input id="fcFlatOnly" type="checkbox" checked><span></span>Km plats seulement</label>
           </div>
+          <div class="f-group">
+            <span class="f-label">Dernières sorties</span>
+            <div id="fcRecent" class="seg" role="group" aria-label="Dernières sorties mises en évidence">
+              <button data-n="0">Aucune</button>
+              <button data-n="3">3</button>
+              <button data-n="5" class="on">5</button>
+              <button data-n="10">10</button>
+            </div>
+          </div>
         </div>
         <div id="fcKmStatus" class="km-status" hidden></div>
         <div id="fcSummary" class="kpis fc-kpis"></div>
@@ -245,7 +254,7 @@
       </section>
 
       <!-- ===== Records et détails ===== -->
-      <section class="card wide" data-page="det">
+      <section class="card wide hide-public" data-page="det">
         <div class="card-head"><div><h2>En bref</h2><p class="card-desc" id="detCoverage"></p></div></div>
         <div id="detStatus" class="km-status" hidden></div>
         <div id="detKpis" class="kpis fc-kpis"></div>
@@ -254,11 +263,11 @@
         <div class="card-head"><div><h2>Mes records en course à pied</h2><p class="card-desc">Meilleurs temps calculés par Strava sur n'importe quel morceau de tes sorties.</p></div></div>
         <div id="detRecords" class="table-wrap"></div>
       </section>
-      <section class="card wide" data-page="det">
+      <section class="card wide hide-public" data-page="det">
         <div class="card-head"><div><h2>Progression de mes records</h2><p class="card-desc">Meilleur temps de chaque mois (points) et record en cours (ligne). Plus bas = plus rapide.</p></div></div>
         <div id="detProg" class="mini-grid"></div>
       </section>
-      <section class="card wide" data-page="det">
+      <section class="card wide hide-public" data-page="det">
         <div class="card-head"><div><h2>Mes temps estimés aujourd'hui</h2><p class="card-desc">Ton potentiel d'après ta meilleure performance des 6 derniers mois, ramenée à chaque distance (formule de Riegel). Sur semi et marathon, c'est optimiste si tu ne fais pas de sorties longues.</p></div></div>
         <div id="detPred" class="pred"></div>
       </section>
