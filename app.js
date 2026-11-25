@@ -2163,7 +2163,7 @@ function renderGoal() {
   const unit = "km";
   $("#goalUnit").textContent = unit;
   if (document.activeElement !== $("#goalInput")) $("#goalInput").value = Math.round(goal);
-  $("#goalTitle").textContent = STATIC ? `${y} et ${y - 1} : km de ${GOAL_SPORTS[goalSport].label}` : `Objectif ${y} : km de ${GOAL_SPORTS[goalSport].label}`;
+  $("#goalTitle").textContent = STATIC ? `Km cumulés par année : ${GOAL_SPORTS[goalSport].label}` : `Objectif ${y} : km de ${GOAL_SPORTS[goalSport].label}`;
   document.querySelectorAll("#goalSport button").forEach((b) => b.classList.toggle("on", b.dataset.g === goalSport));
   const expected = goal * (dayIdx / yearDays);
   const proj = done * (yearDays / dayIdx);
@@ -2186,20 +2186,25 @@ function renderGoal() {
   const s = svg(W, H);
   const cum = (list, yy) => { const arr = new Float64Array(366); for (const a of list) arr[Math.floor((a.date - new Date(yy, 0, 1)) / 86400000)] += metric.val(a); for (let i = 1; i < 366; i++) arr[i] += arr[i - 1]; return arr; };
   const cy = cum(acts, y), cp = cum(prev, y - 1);
-  const max = niceMax(Math.max(STATIC ? 0 : goal, cp[365], cy[dayIdx - 1]));
+  // site public : toutes les années disponibles, l'année en cours en couleur principale
+  const others = STATIC ? [...new Set(ALL.filter(inGoal).map((a) => a.year))].filter((yy) => yy !== y).sort((a, b) => b - a) : [];
+  const otherCum = others.map((yy, i) => ({ yy, arr: cum(ALL.filter((a) => inGoal(a) && a.year === yy), yy), color: i < 7 ? `var(--series-${[1, 3, 4, 5, 6, 7, 8][i]})` : "var(--other)" })); // pas series-2 : trop proche de l'orange de l'année en cours
+  const max = niceMax(Math.max(STATIC ? 0 : goal, cp[365], cy[dayIdx - 1], ...otherCum.map((o) => o.arr[365])));
   yAxis(s, W, H, pad, max);
   const sx = (i) => pad.l + (i / 365) * (W - pad.l - pad.r), sy = (v) => H - pad.b - (v / max) * (H - pad.t - pad.b);
   [0, 3, 6, 9].forEach((m) => el(s, "text", { x: sx(Math.floor((new Date(y, m, 1) - start) / 86400000)) + 2, y: H - 6 }, MONTHS[m]));
   if (!STATIC) el(s, "line", { x1: sx(0), y1: sy(0), x2: sx(365), y2: sy(goal), stroke: "var(--axis)", "stroke-width": 1.5, "stroke-dasharray": "5 4" });
   const line = (arr, n, attrs) => { const p = []; for (let i = 0; i < n; i += 2) p.push(`${sx(i).toFixed(1)},${sy(arr[i]).toFixed(1)}`); p.push(`${sx(n - 1)},${sy(arr[n - 1])}`); el(s, "polyline", { points: p.join(" "), fill: "none", ...attrs }); };
-  if (prev.length) line(cp, 366, { stroke: "var(--other)", "stroke-width": 1.5 });
+  if (STATIC) [...otherCum].reverse().forEach((o, i) => line(o.arr, 366, { stroke: o.color, "stroke-width": o.yy === y - 1 ? 2 : 1.4, "stroke-opacity": o.yy === y - 1 ? 1 : 0.8 }));
+  else if (prev.length) line(cp, 366, { stroke: "var(--other)", "stroke-width": 1.5 });
   line(cy, dayIdx, { stroke: "var(--accent)", "stroke-width": 2.5, "stroke-linejoin": "round" });
   el(s, "circle", { cx: sx(dayIdx - 1), cy: sy(cy[dayIdx - 1]), r: 4.5, fill: "var(--accent)", stroke: "var(--surface-1)", "stroke-width": 2 });
   $("#goalChart").innerHTML = "";
   $("#goalChart").appendChild(s);
   const leg = document.createElement("div");
   leg.className = "legend";
-  leg.innerHTML = `<span><i style="background:var(--accent);height:3px"></i>${y}</span>${prev.length ? `<span><i style="background:var(--other)"></i>${y - 1} (${metric.fmt(lastYear)})</span>` : ""}${STATIC ? "" : `<span><i style="background:var(--axis)"></i>rythme de l'objectif</span>`}`;
+  if (STATIC) leg.innerHTML = `<span><i style="background:var(--accent);height:3px"></i>${y} (${metric.fmt(done)})</span>` + otherCum.map((o) => `<span><i style="background:${o.color}"></i>${o.yy} (${metric.fmt(o.arr[365])})</span>`).join("");
+  else leg.innerHTML = `<span><i style="background:var(--accent);height:3px"></i>${y}</span>${prev.length ? `<span><i style="background:var(--other)"></i>${y - 1} (${metric.fmt(lastYear)})</span>` : ""}${STATIC ? "" : `<span><i style="background:var(--axis)"></i>rythme de l'objectif</span>`}`;
   $("#goalChart").appendChild(leg);
 }
 $("#goalSport").addEventListener("click", (e) => {
