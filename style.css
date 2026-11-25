@@ -421,3 +421,7 @@ body.static .hide-public { display: none !important; }
 /* site public : pas de phrases d'explication, seulement titres, chiffres et graphiques */
 body.static .page-desc, body.static .card-desc, body.static .explain, body.static p.muted,
 body.static .legend .muted, body.static .sub-title .muted { display: none !important; }
+
+/* site public : du bloc objectif, on ne garde que la comparaison de l'année avec la précédente */
+body.static .goal-only { display: none !important; }
+body.static .goal { grid-template-columns: 1fr; }

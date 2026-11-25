@@ -7,7 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23fc5200'/%3E%3Cpath d='M7 22l6-12 4 8 3-5 5 9' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <link rel="stylesheet" href="style.css?v=mww1lq0m">
+  <link rel="stylesheet" href="style.css?v=mww1ngdp">
 </head>
 <body class="viz-root">
   <!-- barre latérale : marque, rubriques, compte et état des données -->
@@ -85,7 +85,7 @@
 
     <div class="grid">
       <!-- ===== Vue d'ensemble ===== -->
-      <section class="card wide hide-public" data-page="overview">
+      <section class="card wide" data-page="overview">
         <div class="card-head">
           <div><h2 id="goalTitle">Objectif de l'année</h2><p class="card-desc">Combien de km tu veux faire cette année. Course à pied = route, trail et tapis. Ce bloc a son propre choix de sport et ignore les filtres du haut.</p></div>
           <div class="actions">
@@ -94,11 +94,11 @@
               <button data-g="ride">Vélo</button>
               <button data-g="all">Tous sports</button>
             </div>
-            <div class="f-group"><span class="f-label">Objectif</span><input id="goalInput" type="number" min="0" class="num wide-num"> <span class="muted" id="goalUnit">km</span></div>
+            <div class="f-group goal-only"><span class="f-label">Objectif</span><input id="goalInput" type="number" min="0" class="num wide-num"> <span class="muted" id="goalUnit">km</span></div>
           </div>
         </div>
         <div class="goal">
-          <div class="goal-main">
+          <div class="goal-main goal-only">
             <div class="goal-bar"><span id="goalFill"></span><i id="goalMark" title="où tu devrais en être aujourd'hui"></i></div>
             <div id="goalKpis" class="kpis fc-kpis"></div>
           </div>
@@ -386,6 +386,6 @@
   </main>
 
   <div id="tip" class="tip" hidden></div>
-  <script type="module" src="app.js?v=mww1lq0m"></script>
+  <script type="module" src="app.js?v=mww1ngdp"></script>
 </body>
 </html>

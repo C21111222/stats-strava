@@ -2163,7 +2163,7 @@ function renderGoal() {
   const unit = "km";
   $("#goalUnit").textContent = unit;
   if (document.activeElement !== $("#goalInput")) $("#goalInput").value = Math.round(goal);
-  $("#goalTitle").textContent = `Objectif ${y} : km de ${GOAL_SPORTS[goalSport].label}`;
+  $("#goalTitle").textContent = STATIC ? `${y} et ${y - 1} : km de ${GOAL_SPORTS[goalSport].label}` : `Objectif ${y} : km de ${GOAL_SPORTS[goalSport].label}`;
   document.querySelectorAll("#goalSport button").forEach((b) => b.classList.toggle("on", b.dataset.g === goalSport));
   const expected = goal * (dayIdx / yearDays);
   const proj = done * (yearDays / dayIdx);
@@ -2182,15 +2182,15 @@ function renderGoal() {
   ].map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
 
   // courbe : cette année, l'objectif en ligne droite, l'an dernier en pointillés
-  const W = CW(520), H = 200, pad = { t: 10, r: 10, b: 22, l: 44 };
+  const W = STATIC ? CW() : CW(520), H = STATIC ? 280 : 200, pad = { t: 10, r: 10, b: 22, l: 44 }; // site public : graphe seul, en pleine largeur
   const s = svg(W, H);
   const cum = (list, yy) => { const arr = new Float64Array(366); for (const a of list) arr[Math.floor((a.date - new Date(yy, 0, 1)) / 86400000)] += metric.val(a); for (let i = 1; i < 366; i++) arr[i] += arr[i - 1]; return arr; };
   const cy = cum(acts, y), cp = cum(prev, y - 1);
-  const max = niceMax(Math.max(goal, cp[365], cy[dayIdx - 1]));
+  const max = niceMax(Math.max(STATIC ? 0 : goal, cp[365], cy[dayIdx - 1]));
   yAxis(s, W, H, pad, max);
   const sx = (i) => pad.l + (i / 365) * (W - pad.l - pad.r), sy = (v) => H - pad.b - (v / max) * (H - pad.t - pad.b);
   [0, 3, 6, 9].forEach((m) => el(s, "text", { x: sx(Math.floor((new Date(y, m, 1) - start) / 86400000)) + 2, y: H - 6 }, MONTHS[m]));
-  el(s, "line", { x1: sx(0), y1: sy(0), x2: sx(365), y2: sy(goal), stroke: "var(--axis)", "stroke-width": 1.5, "stroke-dasharray": "5 4" });
+  if (!STATIC) el(s, "line", { x1: sx(0), y1: sy(0), x2: sx(365), y2: sy(goal), stroke: "var(--axis)", "stroke-width": 1.5, "stroke-dasharray": "5 4" });
   const line = (arr, n, attrs) => { const p = []; for (let i = 0; i < n; i += 2) p.push(`${sx(i).toFixed(1)},${sy(arr[i]).toFixed(1)}`); p.push(`${sx(n - 1)},${sy(arr[n - 1])}`); el(s, "polyline", { points: p.join(" "), fill: "none", ...attrs }); };
   if (prev.length) line(cp, 366, { stroke: "var(--other)", "stroke-width": 1.5 });
   line(cy, dayIdx, { stroke: "var(--accent)", "stroke-width": 2.5, "stroke-linejoin": "round" });
@@ -2199,7 +2199,7 @@ function renderGoal() {
   $("#goalChart").appendChild(s);
   const leg = document.createElement("div");
   leg.className = "legend";
-  leg.innerHTML = `<span><i style="background:var(--accent);height:3px"></i>${y}</span>${prev.length ? `<span><i style="background:var(--other)"></i>${y - 1} (${metric.fmt(lastYear)})</span>` : ""}<span><i style="background:var(--axis)"></i>rythme de l'objectif</span>`;
+  leg.innerHTML = `<span><i style="background:var(--accent);height:3px"></i>${y}</span>${prev.length ? `<span><i style="background:var(--other)"></i>${y - 1} (${metric.fmt(lastYear)})</span>` : ""}${STATIC ? "" : `<span><i style="background:var(--axis)"></i>rythme de l'objectif</span>`}`;
   $("#goalChart").appendChild(leg);
 }
 $("#goalSport").addEventListener("click", (e) => {
