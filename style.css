@@ -384,3 +384,36 @@ body.static .hide-public { display: none !important; }
 .recent-list a { color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-list a:hover { color: var(--accent); }
 .recent-list .gap { flex: none; color: var(--muted); }
+
+/* ---------- téléphone ---------- */
+@media (max-width: 800px) {
+  /* filtres : plus collés en haut (ils prenaient un tiers de l'écran), et plus compacts */
+  .filters { position: static; padding: 10px 12px; gap: 10px 14px; margin: 0 0 16px; }
+  .f-group { gap: 6px 8px; }
+  .f-sports { flex-basis: 100%; }
+  .chip { padding: 3px 9px; font-size: 12px; }
+  .seg button { padding: 4px 8px; }
+  /* calendrier : défilement horizontal */
+  #heatmap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* cartes et chiffres plus serrés */
+  .card { padding: 16px 14px; border-radius: 14px; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .kpi { padding: 12px 12px; }
+  .kpi .v { font-size: 20px; }
+  .card-head { margin-bottom: 12px; }
+  .page-desc { font-size: 13px; }
+  .fc-controls { gap: 10px 16px; }
+  .hbar { grid-template-columns: 90px 1fr 70px; }
+  .goal-bar { margin: 4px 0 12px; }
+  .search input { width: 140px; }
+  .b-hero { padding: 22px 18px; }
+  .b-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .b-big { font-size: 24px; }
+  .b-text .b-big { font-size: 16px; }
+  .records, .factors, .mini-grid, .pred { grid-template-columns: 1fr; }
+  .recent-list { grid-template-columns: 1fr; }
+  th, td { padding: 8px 8px; }
+  /* « les plus populaires » : une seule colonne (le classement remplit sinon 2 colonnes) */
+  .top-list ol { grid-auto-flow: row !important; grid-template-rows: none !important; grid-template-columns: 1fr; }
+  .top-list li { grid-template-columns: 24px minmax(0, 1fr) 90px; }
+}

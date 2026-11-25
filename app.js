@@ -114,6 +114,17 @@ function showTip(e, html) {
 const hideTip = () => (tip.hidden = true);
 
 // ---------- petits outils SVG ----------
+// largeur de dessin des graphiques : celle de l'écran sur téléphone (texte lisible), 1000 au plus sur ordinateur
+function CW(max = 1000) {
+  const main = document.querySelector("main#dash");
+  const avail = (main?.clientWidth || innerWidth) - (innerWidth < 800 ? 44 : 60);
+  return Math.round(Math.max(300, Math.min(max, avail)));
+}
+let lastW = innerWidth;
+addEventListener("resize", () => {
+  clearTimeout(window.__rz);
+  window.__rz = setTimeout(() => { if (Math.abs(innerWidth - lastW) > 60 && ALL.length) { lastW = innerWidth; render(); } }, 300);
+});
 function svg(w, h) {
   const s = document.createElementNS(NS, "svg");
   s.setAttribute("viewBox", `0 0 ${w} ${h}`);
@@ -148,7 +159,7 @@ function yAxis(s, W, H, pad, max) {
 
 // ---------- graphique en barres empilées ----------
 // buckets : [{ label, tip, parts: { sport: valeur } }]
-function stackedBars(container, buckets, metric, { height = 260, width = 1000, labelEvery } = {}) {
+function stackedBars(container, buckets, metric, { height = 260, width = CW(), labelEvery } = {}) {
   container.innerHTML = "";
   if (!buckets.length) return (container.innerHTML = '<p class="empty">Rien sur cette période.</p>');
   const W = width, H = height, pad = { t: 10, r: 8, b: 26, l: 44 };
@@ -270,7 +281,7 @@ function renderCumul() {
   for (const y of years) for (let i = 1; i < 366; i++) series[y][i] += series[y][i - 1];
   const lastDay = (y) => (y === pTo.getFullYear() ? doy(pTo) : 365);
   const max = niceMax(Math.max(...years.map((y) => series[y][lastDay(y)])));
-  const W = 1000, H = 300, pad = { t: 10, r: 60, b: 26, l: 44 };
+  const W = CW(), H = 300, pad = { t: 10, r: 60, b: 26, l: 44 };
   const s = svg(W, H);
   yAxis(s, W, H, pad, max);
   const sx = (i) => pad.l + ((W - pad.l - pad.r) * i) / 365;
@@ -336,7 +347,7 @@ function renderAllTime() {
   const gain = (i, n) => cum[i] - (i - n >= 0 ? cum[i - n] : 0);
   $("#allInfo").textContent = `${metric.fmt(total)} au total`;
 
-  const W = 1000, H = 320, pad = { t: 14, r: 16, b: 26, l: 52 };
+  const W = CW(), H = 320, pad = { t: 14, r: 16, b: 26, l: 52 };
   const s = svg(W, H);
   const max = niceMax(total);
   const sx = (i) => pad.l + (i / (days - 1)) * (W - pad.l - pad.r);
@@ -427,6 +438,7 @@ function renderHeatmap() {
     const padT = 18;
     const weeks = st.weeks || Math.ceil((st.t - st.start) / (7 * 86400000)) + 1;
     const W = padL + weeks * (cell + gap), H = padT + 7 * (cell + gap);
+    const narrow = innerWidth < 800;
     if (st.label != null) {
       const active = [...perDay.keys()].filter((k) => k.startsWith(st.label + "-")).length;
       const h = document.createElement("h3");
@@ -436,6 +448,7 @@ function renderHeatmap() {
     }
     const s = svg(W, H);
     s.style.maxWidth = Math.round(W * 1.3) + "px"; // période courte : on ne gonfle pas les cases
+    if (narrow) s.style.minWidth = Math.round(W * 0.75) + "px"; // téléphone : on fait défiler plutôt que d'écraser les cases
     [0, 2, 4].forEach((d) => el(s, "text", { x: 0, y: padT + d * (cell + gap) + cell - 3 }, DAYS[d]));
     let lastMonth = -1;
     for (let w = 0; w < weeks; w++) {
@@ -478,7 +491,7 @@ function renderSports(list) {
 
 function simpleBars(container, labels, values, metric, title) {
   const buckets = labels.map((l, i) => ({ label: l, tip: title(i), parts: values[i] }));
-  stackedBars(container, buckets, metric, { height: 170, width: 480, labelEvery: labels.length > 12 ? 3 : 1 });
+  stackedBars(container, buckets, metric, { height: 170, width: CW(480), labelEvery: labels.length > 12 ? 3 : (CW() < 500 ? 2 : 1) });
 }
 function renderWhen(list) {
   const metric = METRICS[state.metric];
@@ -826,7 +839,7 @@ function renderFc() {
     $("#fcEvoTitle").textContent = `Évolution de ma FC en ${g.label} ${sinceTxt}`;
     const ec = $("#fcEvo");
     ec.innerHTML = "";
-    const W = 1000, H = 300, pad = { t: 22, r: 16, b: 30, l: 44 };
+    const W = CW(), H = 300, pad = { t: 22, r: 16, b: 30, l: 44 };
     const s = svg(W, H);
     const tStart = new Date(fcState.since + "T00:00").getTime(), tEnd = Math.min(Date.now(), fcEnd().getTime());
     const ys = pts.map((p) => p.y);
@@ -885,7 +898,7 @@ function renderFc() {
   // ---- nuage de points ----
   const c = $("#fcScatter");
   c.innerHTML = "";
-  const W = 1000, H = 380, pad = { t: 22, r: 16, b: 40, l: 44 };
+  const W = CW(), H = 380, pad = { t: 22, r: 16, b: 40, l: 44 };
   const s = svg(W, H);
   const xmin = xs[0], xmax = xs.at(-1), xp = (xmax - xmin) * 0.05 || 1;
   // en allure, le plus rapide à droite (axe inversé)
@@ -968,7 +981,7 @@ function renderFc() {
   if (trend.length < 2) {
     tc.innerHTML = '<p class="empty">Il faut au moins deux mois avec deux sorties chacun.</p>';
   } else {
-    const TW = 480, TH = 220, tp = { t: 12, r: 12, b: 26, l: 36 };
+    const TW = CW(480), TH = 220, tp = { t: 12, r: 12, b: 26, l: 36 };
     const ts = svg(TW, TH);
     const tv = trend.map((t) => t.v);
     const ty0 = Math.floor((Math.min(...tv) - 3) / 5) * 5, ty1 = Math.ceil((Math.max(...tv) + 3) / 5) * 5;
@@ -1586,7 +1599,7 @@ function renderForme(listAll) {
   const races = new Set();
   if (DETAILS) for (const a of acts) if (RACE_TYPES.has(DETAILS[a.id]?.wt)) races.add(Math.round((new Date(a.date.getFullYear(), a.date.getMonth(), a.date.getDate()) - t0) / DAY));
 
-  const W = 1000, pad = { t: 14, r: 16, b: 26, l: 44 };
+  const W = CW(), pad = { t: 14, r: 16, b: 26, l: 44 };
   const sx = (i) => pad.l + ((i - i0) / Math.max(1, n - 1)) * (W - pad.l - pad.r);
   const monthTicks = (s, H) => {
     let last = -1;
@@ -1968,7 +1981,7 @@ function renderSegDetail() {
 }
 
 // petit graphe « temps au fil des dates » : points + record en cours (ligne en escalier)
-function timeChart(points, { height = 160, width = 600 } = {}) {
+function timeChart(points, { height = 160, width = CW(600) } = {}) {
   const W = width, H = height, pad = { t: 12, r: 10, b: 22, l: 46 };
   const s = svg(W, H);
   if (!points.length) return s;
@@ -2019,7 +2032,7 @@ function renderRecordProgress(covered) {
     div.className = "mini";
     const best = pts.reduce((b, p) => (p.t < b.t ? p : b));
     div.innerHTML = `<h3>${label}<span>record ${fmtDuration(best.t)} · ${fmtDate(best.date)}</span></h3>`;
-    div.appendChild(timeChart(pts, { height: 170, width: 520 }));
+    div.appendChild(timeChart(pts, { height: 170, width: CW(520) }));
     box.appendChild(div);
   }
   if (!any) box.innerHTML = '<p class="empty">Pas encore assez de fiches détaillées de course à pied sur cette période.</p>';
@@ -2089,7 +2102,7 @@ function renderDrift() {
     ["Début → fin de période", `${fmtNum(early, 1)} → ${fmtNum(late, 1)} %`, late < early - 1 ? "ça s'améliore" : late > early + 1 ? "ça se dégrade" : "stable"],
   ].map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
 
-  const W = 1000, H = 260, pad = { t: 14, r: 16, b: 26, l: 44 };
+  const W = CW(), H = 260, pad = { t: 14, r: 16, b: 26, l: 44 };
   const s = svg(W, H);
   const t0 = rows[0].a.date.getTime(), t1 = Math.max(rows.at(-1).a.date.getTime(), t0 + 86400000);
   const ds = rows.map((r) => r.d);
@@ -2167,7 +2180,7 @@ function renderGoal() {
   ].map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
 
   // courbe : cette année, l'objectif en ligne droite, l'an dernier en pointillés
-  const W = 520, H = 200, pad = { t: 10, r: 10, b: 22, l: 44 };
+  const W = CW(520), H = 200, pad = { t: 10, r: 10, b: 22, l: 44 };
   const s = svg(W, H);
   const cum = (list, yy) => { const arr = new Float64Array(366); for (const a of list) arr[Math.floor((a.date - new Date(yy, 0, 1)) / 86400000)] += metric.val(a); for (let i = 1; i < 366; i++) arr[i] += arr[i - 1]; return arr; };
   const cy = cum(acts, y), cp = cum(prev, y - 1);
@@ -2246,7 +2259,7 @@ function renderExplore(list, home) {
   const box = $("#exploreYears");
   box.innerHTML = "";
   if (years.length < 2) return;
-  const W = 1000, H = 170, pad = { t: 10, r: 10, b: 24, l: 44 };
+  const W = CW(), H = 170, pad = { t: 10, r: 10, b: 24, l: 44 };
   const s = svg(W, H);
   const max = niceMax(Math.max(...years.map((y) => byYear[y])));
   yAxis(s, W, H, pad, max);
@@ -2391,7 +2404,7 @@ function renderCompare() {
   const len = Math.max(Math.round((a1 - a0) / 86400000), Math.round((b1 - b0) / 86400000)) + 1;
   const cum = (L, f0, f1) => { const n = Math.round((f1 - f0) / 86400000) + 1, arr = new Float64Array(n); for (const x of L) arr[Math.floor((x.date - f0) / 86400000)] += x.distance / 1000; for (let i = 1; i < n; i++) arr[i] += arr[i - 1]; return arr; };
   const ca = cum(A, a0, a1), cb = cum(B, b0, b1);
-  const W = 1000, H = 260, pad = { t: 10, r: 60, b: 24, l: 52 };
+  const W = CW(), H = 260, pad = { t: 10, r: 60, b: 24, l: 52 };
   const s = svg(W, H);
   const max = niceMax(Math.max(ca.at(-1) || 0, cb.at(-1) || 0));
   yAxis(s, W, H, pad, max);
