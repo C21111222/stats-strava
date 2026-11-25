@@ -1886,6 +1886,7 @@ async function boot() {
   }
   if (st.static) {
     document.body.classList.add("static");
+    neutralTexts(st.athlete?.firstname);
     // site public : « Les stats de Prénom » plutôt que « Mes stats »
     if (st.athlete?.firstname) $(".brand span:last-child").textContent = `Stats de ${st.athlete.firstname}`;
     showPage(); // met à jour le titre de l'onglet
@@ -2508,3 +2509,36 @@ function renderBilan() {
 }
 $("#bilanYear").addEventListener("change", (e) => { bilanYear = +e.target.value; renderBilan(); });
 $("#bilanPrint").addEventListener("click", () => window.print());
+
+// ---------- site public : textes neutres (le site s'adresse à des visiteurs, pas au propriétaire) ----------
+function neutralTexts(firstname) {
+  const who = firstname || "l'athlète";
+  const rules = [
+    [/^Quand je sors$/, "Jours et heures de sortie"],
+    [/^Mes sorties marquantes$/, "Sorties marquantes"],
+    [/^Toutes mes activités$/, "Toutes les activités"],
+    [/^Évolution de ma FC/, "Évolution de la FC"],
+    [/^Mes records en course à pied$/, "Records en course à pied"],
+    [/^Mes tops 10 sur les segments$/, "Tops 10 sur les segments"],
+    [/^Évolution de ma communauté$/, "Évolution de la communauté"],
+    [/^Le plus loin de ton lieu n°1$/, "Sortie la plus lointaine"],
+    [/^Mon année (\d{4})$/, `${who} en $1`],
+    [/^Part de mes sorties$/, "Part des sorties"],
+    [/^Carte de mes activités$/, "Carte des activités"],
+    [/^médiane, moi compris$/, "médiane, athlète compris"],
+  ];
+  const fix = (node) => {
+    const t = node.nodeValue, s = t.trim();
+    if (!s) return;
+    for (const [re, rep] of rules) if (re.test(s)) { node.nodeValue = t.replace(s, s.replace(re, rep)); return; }
+  };
+  const walk = (root) => {
+    const it = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = it.nextNode(); n; n = it.nextNode()) fix(n);
+  };
+  walk(document.body);
+  // les blocs sont redessinés à chaque changement de filtre : on repasse sur ce qui arrive
+  new MutationObserver((muts) => {
+    for (const m of muts) for (const n of m.addedNodes) n.nodeType === 3 ? fix(n) : n.nodeType === 1 && walk(n);
+  }).observe(document.body, { childList: true, subtree: true });
+}

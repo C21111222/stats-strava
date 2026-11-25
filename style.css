@@ -417,3 +417,7 @@ body.static .hide-public { display: none !important; }
   .top-list ol { grid-auto-flow: row !important; grid-template-rows: none !important; grid-template-columns: 1fr; }
   .top-list li { grid-template-columns: 24px minmax(0, 1fr) 90px; }
 }
+
+/* site public : pas de phrases d'explication, seulement titres, chiffres et graphiques */
+body.static .page-desc, body.static .card-desc, body.static .explain, body.static p.muted,
+body.static .legend .muted, body.static .sub-title .muted { display: none !important; }
