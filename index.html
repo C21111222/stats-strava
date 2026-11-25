@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="fr" data-static="1">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mes stats Strava</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23fc5200'/%3E%3Cpath d='M7 22l6-12 4 8 3-5 5 9' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="viz-root">
+  <!-- barre latérale : marque, rubriques, compte et état des données -->
+  <aside class="side" id="side" hidden>
+    <a class="brand" href="#">
+      <span class="logo"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 22l6-12 4 8 3-5 5 9"/></svg></span>
+      <span>Mes stats</span>
+    </a>
+    <p class="lite-badge" id="liteBadge" hidden title="Cette version n'utilise que la liste des activités : quelques requêtes Strava en tout, aucune par sortie. Les analyses au km, les records, les kudos et commentaires nominatifs sont dans la version complète (npm start).">Version légère</p>
+    <nav class="nav" id="tabs">
+      <a href="#" data-page="overview"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>Vue d'ensemble</a>
+      <a href="#carte" data-page="carte"><svg viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg>Carte et lieux</a>
+      <a href="#progression" data-page="progression"><svg viewBox="0 0 24 24"><path d="M3 20h18"/><path d="M4 16l5-5 4 3 7-8"/><path d="M15 6h5v5"/></svg>Progression</a>
+      <a href="#forme" data-page="forme"><svg viewBox="0 0 24 24"><path d="M4 18a8 8 0 1 1 16 0"/><path d="m12 18 4-6"/><path d="M4 18h16"/></svg>Forme et fatigue</a>
+      <a href="#fc" data-page="fc"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-9-9a5 5 0 0 1 9-3 5 5 0 0 1 9 3c-2 4.6-9 9-9 9z"/><path d="M3.5 12h4l2-3 3 6 2-3h6"/></svg>Fréquence cardiaque</a>
+      <a href="#det" data-page="det" class="needs-detail"><svg viewBox="0 0 24 24"><path d="M8 21h8M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/></svg>Records et détails</a>
+      <a href="#social" data-page="social"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2a5 5 0 0 1 5.5 4.8"/></svg>Communauté</a>
+      <a href="#comparer" data-page="comparer"><svg viewBox="0 0 24 24"><path d="M8 3v18M16 3v18"/><path d="M3 8h5M16 14h5"/><path d="m5 6-2 2 2 2M19 12l2 2-2 2"/></svg>Comparer</a>
+      <a href="#bilan" data-page="bilan"><svg viewBox="0 0 24 24"><path d="m12 3 2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.8z"/></svg>Bilan de l'année</a>
+      <a href="#activites" data-page="activites"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>Activités</a>
+    </nav>
+    <div class="side-foot">
+      <div class="me">
+        <span class="avatar" id="avatar"></span>
+        <span><b id="who"></b><small id="syncInfo"></small></span>
+      </div>
+      <div id="jobs" class="jobs"></div>
+      <div class="side-actions">
+        <button id="btnSync" hidden><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>Synchroniser</button>
+        <button id="btnFull" class="ghost" hidden title="Recharge tout l'historique (prend en compte les activités modifiées ou supprimées)">Tout recharger</button>
+        <button id="btnLogout" class="ghost" hidden>Déconnecter</button>
+      </div>
+    </div>
+  </aside>
+
+  <main id="setup" hidden></main>
+
+  <main id="dash" hidden>
+    <header class="page-head">
+      <div>
+        <h1 id="pageTitle">Vue d'ensemble</h1>
+        <p id="pageDesc" class="page-desc"></p>
+      </div>
+    </header>
+
+    <!-- filtres communs (sauf page FC, qui a les siens) -->
+    <section class="filters" data-page="overview carte progression forme det social activites comparer">
+      <div class="f-group" data-page="overview carte progression forme det social activites">
+        <span class="f-label">Période</span>
+        <select id="fPeriod"></select>
+        <span id="fRange" class="range" hidden><input id="fFrom" type="date" aria-label="Du"><span class="muted">→</span><input id="fTo" type="date" aria-label="Au"></span>
+      </div>
+      <div class="f-group" data-page="overview progression">
+        <span class="f-label">Mesure</span>
+        <div id="fMetricSeg" class="seg" role="group" aria-label="Mesure">
+          <button data-m="distance" class="on">Distance</button>
+          <button data-m="time">Temps</button>
+          <button data-m="elevation">D+</button>
+          <button data-m="count">Nombre</button>
+        </div>
+        <select id="fMetric" hidden>
+          <option value="distance">Distance</option>
+          <option value="time">Temps</option>
+          <option value="elevation">Dénivelé +</option>
+          <option value="count">Nombre</option>
+        </select>
+      </div>
+      <div class="f-group f-sports">
+        <span class="f-label" title="Clic : n'afficher que ce sport, puis ajouter ou retirer d'autres sports. « Tous » remet tout.">Sports</span>
+        <div id="fSports" class="chips" role="group" aria-label="Sports"></div>
+      </div>
+    </section>
+
+    <section id="kpis" class="kpis hero" data-page="overview"></section>
+
+    <div class="grid">
+      <!-- ===== Vue d'ensemble ===== -->
+      <section class="card wide" data-page="overview">
+        <div class="card-head">
+          <div><h2 id="goalTitle">Objectif de l'année</h2><p class="card-desc">Combien de km tu veux faire cette année. Course à pied = route, trail et tapis. Ce bloc a son propre choix de sport et ignore les filtres du haut.</p></div>
+          <div class="actions">
+            <div id="goalSport" class="seg" role="group" aria-label="Sport de l'objectif">
+              <button data-g="run" class="on">Course à pied</button>
+              <button data-g="ride">Vélo</button>
+              <button data-g="all">Tous sports</button>
+            </div>
+            <div class="f-group"><span class="f-label">Objectif</span><input id="goalInput" type="number" min="0" class="num wide-num"> <span class="muted" id="goalUnit">km</span></div>
+          </div>
+        </div>
+        <div class="goal">
+          <div class="goal-main">
+            <div class="goal-bar"><span id="goalFill"></span><i id="goalMark" title="où tu devrais en être aujourd'hui"></i></div>
+            <div id="goalKpis" class="kpis fc-kpis"></div>
+          </div>
+          <div id="goalChart" class="chart"></div>
+        </div>
+      </section>
+      <section class="card wide" data-page="overview">
+        <div class="card-head">
+          <div><h2 id="volTitle">Volume</h2><p class="card-desc">Une barre par période, découpée par sport. Survole une barre pour le détail.</p></div>
+          <div class="seg" role="group" aria-label="Granularité">
+            <button data-gran="week">Semaine</button>
+            <button data-gran="month" class="on">Mois</button>
+            <button data-gran="year">Année</button>
+          </div>
+        </div>
+        <div id="chartVolume" class="chart"></div>
+      </section>
+
+      <section class="card" data-page="overview">
+        <div class="card-head"><div><h2>Par sport</h2><p class="card-desc">Selon la mesure choisie.</p></div></div>
+        <div id="chartSports"></div>
+      </section>
+
+      <section class="card" data-page="overview">
+        <div class="card-head"><div><h2>Quand je sors</h2><p class="card-desc">Par jour de la semaine, puis par heure de départ.</p></div></div>
+        <div id="chartWeekday" class="chart small"></div>
+        <div id="chartHour" class="chart small"></div>
+      </section>
+
+      <section class="card wide" data-page="overview">
+        <div class="card-head"><div><h2>Mes sorties marquantes</h2><p class="card-desc">La plus longue, la plus haute, la plus rapide en moyenne, par sport.</p></div></div>
+        <div id="records" class="records"></div>
+      </section>
+
+      <section class="card wide" data-page="overview">
+        <div class="card-head"><div><h2>Totaux par année</h2><p class="card-desc">Tous les ans, pour les sports choisis.</p></div></div>
+        <div id="years" class="table-wrap"></div>
+      </section>
+
+      <!-- ===== Carte et lieux ===== -->
+      <section class="card wide" data-page="carte">
+        <div class="card-head">
+          <div><h2>Carte de mes activités</h2><p class="card-desc">Clic sur un tracé pour sa fiche. Les ronds numérotés sont les lieux de départ et d'arrivée les plus fréquents.</p></div>
+          <div class="actions">
+            <span id="mapInfo" class="muted"></span>
+            <div id="mapMode" class="seg" role="group" aria-label="Affichage">
+              <button data-mode="sport" class="on">Par sport</button>
+              <button data-mode="heat">Chaleur</button>
+            </div>
+            <label class="toggle needs-gps"><input id="placesToggle" type="checkbox" checked><span></span>Lieux fréquents</label>
+            <button id="mapFit" class="ghost">Recentrer</button>
+          </div>
+        </div>
+        <div id="map"></div>
+      </section>
+
+      <section class="card wide" data-page="carte">
+        <div class="card-head"><div><h2>Exploration</h2><p class="card-desc">Le territoire couvert, découpé en cases d'environ 1 km de côté.</p></div></div>
+        <div id="exploreKpis" class="kpis fc-kpis"></div>
+        <div id="exploreYears" class="chart"></div>
+      </section>
+
+      <section class="card wide needs-gps" data-page="carte">
+        <div class="card-head"><div><h2>Lieux de départ et d'arrivée</h2><p class="card-desc" id="placesInfo"></p></div></div>
+        <div id="places" class="table-wrap"></div>
+      </section>
+
+      <!-- ===== Progression ===== -->
+      <section class="card wide" data-page="progression">
+        <div class="card-head"><div><h2 id="allTitle">Cumul depuis le début</h2><p class="card-desc"><span id="allInfo"></span> · La bande bleutée montre la période choisie.</p></div></div>
+        <div id="chartAll" class="chart"></div>
+      </section>
+
+      <section class="card wide" data-page="progression">
+        <div class="card-head"><div><h2 id="cumTitle">Cumul par année</h2><p class="card-desc">Chaque année part de zéro le 1er janvier : on voit qui est en avance.</p></div></div>
+        <div id="chartCumul" class="chart"></div>
+      </section>
+
+      <section class="card wide" data-page="progression">
+        <div class="card-head"><div><h2>Régularité</h2><p class="card-desc" id="heatYear"></p></div></div>
+        <div id="heatmap" class="chart"></div>
+      </section>
+
+      <!-- ===== Forme et fatigue ===== -->
+      <section class="card wide" data-page="forme">
+        <div class="fc-controls">
+          <div class="f-group"><span class="f-label">FC de repos</span><input id="fmRest" type="number" min="30" max="100" class="num"> <span class="muted">bpm</span></div>
+          <div class="f-group"><span class="f-label">FC max</span><input id="fmMax" type="number" min="140" max="230" class="num"> <span class="muted">bpm (vide = estimée)</span></div>
+          <p class="muted" id="fmNote"></p>
+        </div>
+        <div id="fmKpis" class="kpis fc-kpis"></div>
+        <h3 class="sub-title">Forme et fatigue</h3>
+        <div id="fmChart" class="chart"></div>
+        <h3 class="sub-title fc-gap">Fraîcheur <span class="muted">(forme − fatigue : au-dessus de 0, tu es reposé ; en dessous, tu accumules)</span></h3>
+        <div id="fmTsb" class="chart"></div>
+        <details class="explain">
+          <summary>Comment c'est calculé</summary>
+          <p>Chaque sortie reçoit une <b>charge</b> d'après sa durée et sa FC moyenne : 100 correspond à environ une heure à ton seuil (estimé à 85 % de ta réserve cardiaque, entre FC de repos et FC max). La <b>forme</b> est la moyenne de ta charge quotidienne sur environ 6 semaines, la <b>fatigue</b> sur 7 jours. La <b>fraîcheur</b> est la différence entre les deux : très négative après une grosse semaine, positive après quelques jours calmes. Une forme qui monte de plus de 8 points en une semaine expose aux blessures. Repères : en dessous de −30, surcharge ; entre +5 et +15, idéal pour une course.</p>
+        </details>
+      </section>
+
+      <!-- ===== Fréquence cardiaque ===== -->
+      <section class="card wide" id="fcCard" data-page="fc">
+        <div class="fc-controls">
+          <div class="f-group">
+            <span class="f-label">Sport</span>
+            <div id="fcSeg" class="seg" role="group" aria-label="Sport analysé">
+              <button data-g="run" class="on">Course</button>
+              <button data-g="trail">Trail</button>
+              <button data-g="ride">Vélo</button>
+            </div>
+          </div>
+          <div class="f-group needs-detail">
+            <span class="f-label">Détail</span>
+            <div id="fcDetail" class="seg" role="group" aria-label="Détail">
+              <button data-d="km" class="on">Par km</button>
+              <button data-d="ride">Par sortie</button>
+            </div>
+          </div>
+          <div class="f-group">
+            <span class="f-label">Période</span>
+            <span class="range"><input id="fcSince" type="date" aria-label="Du"><span class="muted">→</span><input id="fcUntil" type="date" aria-label="Au"></span>
+          </div>
+          <div class="f-group f-opts">
+            <label class="toggle" id="fcFlatWrap" hidden title="Corrige l'allure selon la pente"><input id="fcFlat" type="checkbox" checked><span></span>Allure à plat équivalente</label>
+            <label class="toggle" id="fcFirstWrap" title="La FC met quelques minutes à monter : le 1er km la sous-estime"><input id="fcFirst" type="checkbox" checked><span></span>Sans le 1er km</label>
+            <label class="toggle" id="fcFlatOnlyWrap" hidden title="À vélo, la vitesse dépend surtout de la pente"><input id="fcFlatOnly" type="checkbox" checked><span></span>Km plats seulement</label>
+          </div>
+        </div>
+        <div id="fcKmStatus" class="km-status" hidden></div>
+        <div id="fcSummary" class="kpis fc-kpis"></div>
+        <h3 class="sub-title" id="fcEvoTitle">Évolution de ma FC</h3>
+        <div id="fcEvo" class="chart"></div>
+        <h3 class="sub-title fc-gap">FC selon l'allure <span class="muted">(un point = un km ou une sortie selon le détail choisi)</span></h3>
+        <div id="fcScatter" class="chart"></div>
+        <div class="grid fc-sub">
+          <div><h3 class="sub-title" id="fcTrendTitle">Évolution</h3><div id="fcTrend" class="chart"></div></div>
+          <div><h3 class="sub-title">FC moyenne par tranche</h3><div id="fcBins" class="table-wrap"></div></div>
+        </div>
+        <h3 class="sub-title fc-gap needs-detail">Dérive cardiaque <span class="muted">(sorties régulières d'au moins 8 km)</span></h3>
+        <div id="fcDriftKpis" class="kpis fc-kpis needs-detail"></div>
+        <div id="fcDrift" class="chart needs-detail"></div>
+        <p class="muted needs-detail">Pour chaque sortie : on compare le rendement (vitesse pour un battement) de la 1re moitié et de la 2de moitié. Si la FC monte alors que l'allure reste la même, le rendement baisse : c'est la dérive. Sous 5 %, ton endurance tient la distance. Les sorties à allure très irrégulière (fractionné) sont écartées.</p>
+      </section>
+
+      <!-- ===== Records et détails ===== -->
+      <section class="card wide" data-page="det">
+        <div class="card-head"><div><h2>En bref</h2><p class="card-desc" id="detCoverage"></p></div></div>
+        <div id="detStatus" class="km-status" hidden></div>
+        <div id="detKpis" class="kpis fc-kpis"></div>
+      </section>
+      <section class="card wide" data-page="det">
+        <div class="card-head"><div><h2>Mes records en course à pied</h2><p class="card-desc">Meilleurs temps calculés par Strava sur n'importe quel morceau de tes sorties.</p></div></div>
+        <div id="detRecords" class="table-wrap"></div>
+      </section>
+      <section class="card wide" data-page="det">
+        <div class="card-head"><div><h2>Progression de mes records</h2><p class="card-desc">Meilleur temps de chaque mois (points) et record en cours (ligne). Plus bas = plus rapide.</p></div></div>
+        <div id="detProg" class="mini-grid"></div>
+      </section>
+      <section class="card wide" data-page="det">
+        <div class="card-head"><div><h2>Mes temps estimés aujourd'hui</h2><p class="card-desc">Ton potentiel d'après ta meilleure performance des 6 derniers mois, ramenée à chaque distance (formule de Riegel). Sur semi et marathon, c'est optimiste si tu ne fais pas de sorties longues.</p></div></div>
+        <div id="detPred" class="pred"></div>
+      </section>
+      <section class="card wide" data-page="det">
+        <div class="card-head"><div><h2>Courses officielles</h2><p class="card-desc">Les sorties marquées « course » sur Strava.</p></div></div>
+        <div id="detRaces" class="table-wrap"></div>
+      </section>
+      <section class="card wide" data-page="det">
+        <div class="card-head"><div><h2>Segments les plus pratiqués</h2><p class="card-desc">Clic sur un segment pour voir tous tes temps.</p></div></div>
+        <div id="detSegs" class="table-wrap"></div>
+        <div id="segDetail" class="seg-detail" hidden></div>
+      </section>
+      <section class="card" data-page="det">
+        <div class="card-head"><div><h2>Mes tops 10 sur les segments</h2></div></div>
+        <div id="detKoms" class="table-wrap"></div>
+      </section>
+      <section class="card" data-page="det">
+        <div class="card-head"><div><h2>Appareils</h2></div></div>
+        <div id="detDevices" class="table-wrap"></div>
+      </section>
+      <section class="card wide" data-page="det">
+        <div class="card-head"><div><h2>Matériel</h2><p class="card-desc">Vélos et chaussures déclarés sur Strava, sur toute leur vie (pas seulement la période). Une paire de chaussures se change en général entre 600 et 800 km.</p></div></div>
+        <div id="detGear" class="table-wrap"></div>
+      </section>
+
+      <!-- ===== Communauté ===== -->
+      <section class="card wide" data-page="social">
+        <div class="card-head">
+          <div><h2 id="topTitle">Les plus populaires</h2><p class="card-desc">Mes sorties les plus kudosées ou commentées.</p></div>
+          <div id="topSeg" class="seg" role="group" aria-label="Classer par">
+            <button data-top="kudos" class="on">Kudos</button>
+            <button data-top="comments">Commentaires</button>
+          </div>
+        </div>
+        <div id="top" class="top-list"></div>
+      </section>
+
+      <section class="card wide needs-names needs-detail" data-page="social">
+        <div class="card-head"><div><h2>Qui me met le plus de kudos</h2><p class="card-desc" id="kudInfo"></p></div></div>
+        <div id="kudStatus" class="km-status" hidden></div>
+        <div id="kudoers" class="table-wrap"></div>
+      </section>
+
+      <section class="card wide needs-names needs-detail" data-page="social">
+        <div class="card-head"><div><h2>Qui commente le plus mes sorties</h2><p class="card-desc">Mes propres réponses ne comptent pas.</p></div></div>
+        <div id="comStatus" class="km-status" hidden></div>
+        <div id="commenters" class="table-wrap"></div>
+      </section>
+
+      <section class="card wide" data-page="social">
+        <div class="card-head"><div><h2>Ce qui fait des kudos</h2><p class="card-desc">Kudos moyens par sortie selon chaque critère, sur la période choisie. Comme le nombre d'abonnés change avec le temps, compare plutôt sur une période courte (12 derniers mois).</p></div></div>
+        <div id="kudFactors" class="factors"></div>
+      </section>
+
+      <section class="card wide" data-page="social">
+        <div class="card-head"><div><h2>Évolution de ma communauté</h2><p class="card-desc">Année par année, sur toutes les années (filtre de sport appliqué).</p></div></div>
+        <div id="community" class="table-wrap"></div>
+      </section>
+
+      <section class="card wide" data-page="social">
+        <div class="card-head"><div><h2>Sorties en groupe</h2><p class="card-desc">D'après le nombre de personnes enregistrées ensemble par Strava.</p></div></div>
+        <div id="groupKpis" class="kpis fc-kpis"></div>
+        <div class="grid fc-sub">
+          <div><h3 class="sub-title">Par sport</h3><div id="groupSports" class="table-wrap"></div></div>
+          <div><h3 class="sub-title">Dernières sorties en groupe</h3><div id="groupLast" class="table-wrap"></div></div>
+        </div>
+        <h3 class="sub-title fc-gap">Par année</h3>
+        <div id="groupYears" class="table-wrap"></div>
+      </section>
+
+      <!-- ===== Comparer ===== -->
+      <section class="card wide" data-page="comparer">
+        <div class="fc-controls">
+          <div class="f-group"><span class="f-label">Comparer</span>
+            <select id="cmpPreset">
+              <option value="ytd">Cette année et l'an dernier à la même date</option>
+              <option value="12m">12 derniers mois et les 12 précédents</option>
+              <option value="years">Les deux dernières années entières</option>
+              <option value="month">Ce mois-ci et le mois dernier</option>
+              <option value="">Dates choisies</option>
+            </select>
+          </div>
+          <div class="f-group"><span class="f-label cmp-a">A</span><span class="range"><input id="cmpA1" type="date" aria-label="A du"><span class="muted">→</span><input id="cmpA2" type="date" aria-label="A au"></span></div>
+          <div class="f-group"><span class="f-label cmp-b">B</span><span class="range"><input id="cmpB1" type="date" aria-label="B du"><span class="muted">→</span><input id="cmpB2" type="date" aria-label="B au"></span></div>
+        </div>
+        <div id="cmpTable" class="table-wrap"></div>
+      </section>
+      <section class="card" data-page="comparer">
+        <div class="card-head"><div><h2>Distance par sport</h2><p class="card-desc">A en orange, B en gris.</p></div></div>
+        <div id="cmpSports"></div>
+      </section>
+      <section class="card" data-page="comparer">
+        <div class="card-head"><div><h2>Distance cumulée</h2><p class="card-desc">Jour après jour depuis le début de chaque période.</p></div></div>
+        <div id="cmpChart" class="chart"></div>
+      </section>
+
+      <!-- ===== Bilan ===== -->
+      <section class="card wide bilan-card" data-page="bilan">
+        <div class="card-head no-print">
+          <div class="f-group"><span class="f-label">Année</span><select id="bilanYear"></select></div>
+          <button id="bilanPrint" class="ghost">Imprimer ou enregistrer en PDF</button>
+        </div>
+        <div id="bilan"></div>
+      </section>
+
+      <!-- ===== Activités ===== -->
+      <section class="card wide" data-page="activites">
+        <div class="card-head">
+          <div><h2>Toutes mes activités</h2><p class="card-desc">Clic sur un titre de colonne pour trier, sur un nom pour ouvrir la sortie sur Strava.</p></div>
+          <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Rechercher un nom…"></div>
+        </div>
+        <div id="list" class="table-wrap"></div>
+        <div id="pager" class="pager"></div>
+      </section>
+    </div>
+  </main>
+
+  <div id="tip" class="tip" hidden></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
