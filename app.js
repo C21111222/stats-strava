@@ -926,6 +926,7 @@ function renderFc() {
     dot.addEventListener("mouseleave", hideTip);
     dot.addEventListener("click", () => window.open(stravaLink(p.a), "_blank", "noopener"));
   }
+  const gapTxt = (v) => (Math.round(v) === 0 ? "±0" : (v > 0 ? "+" : "") + fmtNum(v, 0));
   // numéro de chaque sortie récente, posé sur son point (ou au centre de ses km)
   const recentInfo = recentActs.map((a, i) => {
     const mine = pts.filter((p) => p.a.id === a.id);
@@ -939,7 +940,7 @@ function renderFc() {
     g0.addEventListener("mousemove", (e) => showTip(e, `<b>${r.n === 1 ? "Dernière sortie" : r.n + "e plus récente"}</b>${esc(r.a.name)} · ${fmtDate(r.a.date)}
       <div class="row"><span>${g.pace ? "Allure" : "Vitesse"}${KM ? " moyenne des km" : ""}</span><span>${fmtX(r.x)}</span></div>
       <div class="row"><span>FC moyenne</span><span>${Math.round(r.y)} bpm</span></div>
-      <div class="row"><span>Écart à la tendance</span><span>${(r.gap >= 0 ? "+" : "") + fmtNum(r.gap, 0)} bpm</span></div>`));
+      <div class="row"><span>Écart à la tendance</span><span>${gapTxt(r.gap)} bpm</span></div>`));
     g0.addEventListener("mouseleave", hideTip);
     g0.addEventListener("click", () => window.open(stravaLink(r.a), "_blank", "noopener"));
   }
@@ -956,7 +957,7 @@ function renderFc() {
     const lst = document.createElement("div");
     lst.className = "recent-list";
     lst.innerHTML = recentInfo.map((r) => `<div><span class="n">${r.n}</span><a href="${stravaLink(r.a)}" target="_blank" rel="noopener" title="${esc(r.a.name)}">${fmtDate(r.a.date)} · ${esc(r.a.name)}</a>
-      <span class="gap">${fmtX(r.x)} · ${Math.round(r.y)} bpm · ${r.gap >= 0 ? "+" : ""}${fmtNum(r.gap, 0)}</span></div>`).join("");
+      <span class="gap">${fmtX(r.x)} · ${Math.round(r.y)} bpm · ${gapTxt(r.gap)}</span></div>`).join("");
     c.appendChild(lst);
   }
 
