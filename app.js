@@ -1891,7 +1891,8 @@ async function boot() {
     if (st.athlete?.firstname) $(".brand span:last-child").textContent = `Stats de ${st.athlete.firstname}`;
     showPage(); // met à jour le titre de l'onglet
     if (!st.privacy?.names) document.body.classList.add("nonames");
-    if (!st.privacy?.gpsExact) { document.body.classList.add("nogps"); placesOn = false; }
+    // lieux de départ et adresses (ils situent le domicile) : seulement si l'export les inclut
+    if (!st.privacy?.places) { document.body.classList.add("nogps"); placesOn = false; }
   }
   if (!st.connected) return showSetup(st);
   const ath = st.athlete;
