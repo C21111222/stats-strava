@@ -2626,6 +2626,21 @@ function hrMaxEstimate(fam) {
   maxes.sort((a, b) => b - a);
   return maxes[Math.min(2, maxes.length - 1)];
 }
+// FC moyenne (km 2 et suivants : au 1er la FC n'est pas encore montée) de la course sur route la plus rapide de 25 à 45 min
+function seuilEstimate(list) {
+  let best = null;
+  for (const a of list) {
+    if (!ROAD.includes(a.sport) || a.moving_time < 1500 || a.moving_time > 2700 || a.distance < 7000) continue;
+    const sp = SPLITS?.[a.id]?.splits?.filter((x) => x.k > 1 && x.d >= 800 && x.hr > 0);
+    if (!sp || sp.length < 5) continue;
+    const v = a.distance / a.moving_time;
+    if (!best || v > best.v) {
+      const t = sp.reduce((u, x) => u + x.t, 0);
+      best = { v, a, hr: Math.round(sp.reduce((u, x) => u + x.hr * x.t, 0) / t), km: sp.length };
+    }
+  }
+  return best;
+}
 function estimateZones(group) {
   const fam = group === "ride" ? FC_GROUPS.ride.sports : [...FC_GROUPS.run.sports, ...FC_GROUPS.trail.sports];
   const { list, months } = zoneWindow(fam);
@@ -2634,12 +2649,21 @@ function estimateZones(group) {
   const hrMax = manual || auto;
   if (!hrMax) return null;
   const bounds = ZONES.map((z) => Math.round(hrMax * z.lo)).concat(hrMax);
+  // course : le haut de la zone 4 est la FC tenue sur la course la plus rapide d'environ 10 km
+  // (l'échelle d'Olympiatoppen associe la zone 4 à l'allure 10 000 m) ; la zone 5 commence juste au-dessus
+  let seuil = null;
+  if (group !== "ride") {
+    const auto = seuilEstimate(list);
+    const man = SETTINGS?.seuil?.run || null;
+    const x = man || auto?.hr;
+    if (x && x + 1 > bounds[3] && x < hrMax) { bounds[4] = x + 1; seuil = { hr: x, manual: !!man, auto }; }
+  }
   let curve = null, paces = null;
   if (group !== "ride") {
     curve = hrPaceCurve(list);
     if (curve.raw.length >= 30) paces = pacesByZone(curve.raw, bounds);
   }
-  return { hrMax, auto, manual, bounds, curve, paces, months };
+  return { hrMax, auto, manual, bounds, curve, paces, months, seuil };
 }
 function zoneOf(hr, z) {
   let k = 0;
@@ -2690,9 +2714,14 @@ function renderZones() {
   const showPace = group === "run" && z.paces;
   if (document.activeElement !== $("#zonesHrMax")) $("#zonesHrMax").value = z.hrMax;
   $("#zonesHrAuto").hidden = !z.manual;
+  const seuilOn = group !== "ride";
+  $("#zonesSeuil").hidden = $("#zonesSeuilLabel").hidden = !seuilOn;
+  if (document.activeElement !== $("#zonesSeuil")) $("#zonesSeuil").value = z.seuil?.hr ?? "";
+  $("#zonesSeuilAuto").hidden = !(seuilOn && z.seuil?.manual);
   const per = z.months ? `des ${z.months} derniers mois` : "de tout l'historique";
   $("#zonesKpis").innerHTML = [
     ["FC max", `${z.hrMax} bpm`, z.manual ? (STATIC ? "" : `réglée à la main · estimation : ${z.auto ?? "–"}`) : "médiane des 5 plus hautes FC sur 3 ans"],
+    ...(z.seuil ? [["Haut de la zone 4", `${z.seuil.hr} bpm`, z.seuil.manual ? (STATIC ? "" : `réglé à la main · estimation : ${z.seuil.auto?.hr ?? "–"}`) : `FC des km 2 à ${z.seuil.auto.km + 1} de ${dlink(z.seuil.auto.a, esc(z.seuil.auto.a.name))} (${fmtDate(z.seuil.auto.a.date)}, ${fmtNum(z.seuil.auto.a.distance / 1000, 1)} km en ${fmtDuration(z.seuil.auto.a.moving_time)})`]] : []),
     ...(showPace ? [["Km analysés", fmtNum(z.curve.km), `km de course sur route ${per}, FC et allure réelles`]] : []),
   ].map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
 
@@ -2716,7 +2745,7 @@ function renderZones() {
   const tot = secs.reduce((t, v) => t + v, 0);
   const maxS = Math.max(...secs, 1);
   $("#zonesTable").innerHTML = `<table class="zones"><thead><tr><th>Zone</th><th>% FC max</th><th>FC (bpm)</th>${showPace ? "<th>Allure des km dans la zone</th>" : ""}<th>Temps sur la période</th></tr></thead><tbody>` +
-    ZONES.map((zz, i) => `<tr><td><span class="zdot" style="background:var(--seq-${i + 1})"></span><b>Z${i + 1}</b> ${zz.name}</td><td class="num">${Math.round(zz.lo * 100)} – ${Math.round(zz.hi * 100)} %</td><td class="num">${hrTxt(i)}</td>${showPace ? `<td class="num">${paceTxt(i)}</td>` : ""}
+    ZONES.map((zz, i) => `<tr><td><span class="zdot" style="background:var(--seq-${i + 1})"></span><b>Z${i + 1}</b> ${zz.name}</td><td class="num">${i === 4 ? Math.round((b[4] / z.hrMax) * 100) : Math.round(zz.lo * 100)} – ${i === 3 ? Math.round(((b[4] - 1) / z.hrMax) * 100) : Math.round(zz.hi * 100)} %</td><td class="num">${hrTxt(i)}</td>${showPace ? `<td class="num">${paceTxt(i)}</td>` : ""}
       <td><div class="zbar"><span class="trk"><i style="width:${((secs[i] / maxS) * 100).toFixed(1)}%;background:var(--seq-${i + 1})"></i></span><span>${tot ? fmtNum((secs[i] / tot) * 100, 0) + " %" : "–"}${secs[i] ? " · " + hhmm(secs[i]) : ""}</span></div></td></tr>`).join("") +
     "</tbody></table>";
   $("#zonesCurveTitle").hidden = !showPace;
@@ -2737,3 +2766,10 @@ async function saveHrMax(v) {
 }
 $("#zonesHrMax").addEventListener("change", (e) => { const v = +e.target.value; if (v >= 140 && v <= 230) saveHrMax(v); });
 $("#zonesHrAuto").addEventListener("click", () => saveHrMax(null));
+async function saveSeuil(v) {
+  try { SETTINGS = await api("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ seuil: { run: v } }) }); }
+  catch { return; }
+  renderZones();
+}
+$("#zonesSeuil").addEventListener("change", (e) => { const v = +e.target.value; if (v >= 120 && v <= 230) saveSeuil(v); });
+$("#zonesSeuilAuto").addEventListener("click", () => saveSeuil(null));
