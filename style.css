@@ -437,7 +437,9 @@ table.zones td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .zstack i { display: block; min-width: 2px; }
 @media (max-width: 800px) { .zbar { min-width: 0; } .zbar .trk { display: none; } .zbar > span:last-child { min-width: 0; } table.zones th, table.zones td, table.zones td.num { padding: 6px; font-size: 12px; white-space: normal; } .zbar > span:last-child { white-space: normal; text-align: left; } }
 
-.zones-hr { margin-left: auto; order: 2; }
+.zones-ctl { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
 .zones-hr input { width: 74px; }
 
 .muted-num { color: var(--text-secondary); font-size: 12px; }
+
+#zonesKpis .kpi .v { white-space: normal; overflow: visible; text-overflow: clip; }
