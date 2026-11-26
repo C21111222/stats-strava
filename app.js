@@ -2837,20 +2837,7 @@ function renderSplit() {
 
   const before = pts.filter((p) => p.a.date < cut), after = pts.filter((p) => p.a.date >= cut);
   const unit = KM ? ["km", "km"] : ["sortie", "sorties"];
-  const fmtX = g.pace ? (v) => fmtPace(v) : (v) => fmtNum(v, 0) + " km/h";
-  const w = g.pace ? (KM ? 15 : 20) : 2; // largeur des tranches : 15 s/km, ou 2 km/h
-  const minN = KM ? 5 : 2;
-  const bins = new Map();
-  for (const [side, list] of [["b", before], ["a", after]]) for (const p of list) {
-    const k = Math.floor(p.x / w) * w;
-    if (!bins.has(k)) bins.set(k, { b: [], a: [] });
-    bins.get(k)[side].push(p.y);
-  }
-  const med = (v) => { const s = [...v].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
-  const rows = [...bins].sort((x, y) => x[0] - y[0]).map(([k, v]) => ({ k, nb: v.b.length, na: v.a.length, hb: v.b.length ? med(v.b) : null, ha: v.a.length ? med(v.a) : null }));
-  const shared = rows.filter((r) => r.nb >= minN && r.na >= minN);
-  const wsum = shared.reduce((t, r) => t + Math.min(r.nb, r.na), 0);
-  const diff = wsum ? shared.reduce((t, r) => t + (r.ha - r.hb) * Math.min(r.nb, r.na), 0) / wsum : null;
+  const { w, minN, rows, shared, diff } = splitDiff(pts, cut, g, KM);
   const avg = (l) => (l.length ? l.reduce((t, p) => t + p.y, 0) / l.length : null);
   const sign = (v) => (v > 0 ? "+" : v < 0 ? "−" : "±") + fmtNum(Math.abs(v), 1);
 
@@ -2899,6 +2886,79 @@ function renderSplit() {
       list.map((r) => { const d = r.ha - r.hb; return `<tr><td>${lab(r.k)}</td><td class="num">${fmtNum(r.hb, 0)} <span class="muted-num">(${r.nb} ${unit[1]})</span></td><td class="num">${fmtNum(r.ha, 0)} <span class="muted-num">(${r.na} ${unit[1]})</span></td><td class="num ${d < -0.5 ? "pos" : d > 0.5 ? "neg" : ""}">${sign(d)}</td></tr>`; }).join("") +
       "</tbody></table>"
     : `<p class="empty">Pas assez de ${unit[1]} à la même allure des deux côtés du ${fmtDate(cut)}.</p>`;
+  renderSplitEvo(pts, g, KM, cut);
+}
+// écart de FC à allure égale entre après et avant une date : tranche par tranche, FC médiane, pondéré par le plus petit effectif
+function splitDiff(pts, cut, g, KM) {
+  const w = g.pace ? (KM ? 15 : 20) : 2; // largeur des tranches : 15 s/km, ou 2 km/h
+  const minN = KM ? 5 : 2;
+  const bins = new Map();
+  for (const p of pts) {
+    const k = Math.floor(p.x / w) * w;
+    if (!bins.has(k)) bins.set(k, { b: [], a: [] });
+    bins.get(k)[p.a.date < cut ? "b" : "a"].push(p.y);
+  }
+  const med = (v) => { const s = [...v].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+  const rows = [...bins].sort((x, y) => x[0] - y[0]).map(([k, v]) => ({ k, nb: v.b.length, na: v.a.length, hb: v.b.length ? med(v.b) : null, ha: v.a.length ? med(v.a) : null }));
+  const shared = rows.filter((r) => r.nb >= minN && r.na >= minN);
+  const wsum = shared.reduce((t, r) => t + Math.min(r.nb, r.na), 0);
+  const diff = wsum ? shared.reduce((t, r) => t + (r.ha - r.hb) * Math.min(r.nb, r.na), 0) / wsum : null;
+  return { w, minN, rows, shared, diff, n: wsum };
+}
+// l'écart pour chaque date de coupure possible, semaine par semaine
+function renderSplitEvo(pts, g, KM, cut) {
+  const box = $("#fcSplitEvo");
+  if (pts.length < 10) { box.innerHTML = ""; return; }
+  const t0 = Math.min(...pts.map((p) => +p.a.date)), t1 = Math.max(...pts.map((p) => +p.a.date));
+  const WEEK = 7 * 86400000, minSide = KM ? 40 : 6; // au moins ~40 km (ou 6 sorties) comparés de chaque côté
+  const evo = [];
+  for (let t = t0 + WEEK; t < t1; t += WEEK) {
+    const d = new Date(t); d.setHours(0, 0, 0, 0);
+    const r = splitDiff(pts, d, g, KM);
+    if (r.diff != null && r.n >= minSide) evo.push({ d, v: r.diff });
+  }
+  if (evo.length < 3) { box.innerHTML = '<p class="empty">Pas assez de données pour suivre l\'écart dans le temps.</p>'; return; }
+  const W = CW(), H = 220, pad = { t: 14, r: 12, b: 26, l: 40 };
+  const s = svg(W, H);
+  const vs = evo.map((e) => e.v);
+  const lo = Math.floor(Math.min(0, ...vs) - 1), hi = Math.ceil(Math.max(0, ...vs) + 1);
+  const sx = (t) => pad.l + ((t - t0) / (t1 - t0)) * (W - pad.l - pad.r);
+  const sy = (v) => H - pad.b - ((v - lo) / (hi - lo)) * (H - pad.t - pad.b);
+  const stepY = hi - lo > 12 ? 4 : 2;
+  for (let v = Math.ceil(lo / stepY) * stepY; v <= hi; v += stepY) {
+    el(s, "line", { x1: pad.l, x2: W - pad.r, y1: sy(v), y2: sy(v), class: v === 0 ? "base-line" : "grid-line" });
+    el(s, "text", { x: pad.l - 6, y: sy(v) + 4, "text-anchor": "end" }, v > 0 ? "+" + v : v);
+  }
+  // mois en abscisse
+  const m0 = new Date(t0); m0.setDate(1); m0.setMonth(m0.getMonth() + 1);
+  const months = Math.round((t1 - t0) / (30 * 86400000));
+  for (const d = new Date(m0); +d < t1; d.setMonth(d.getMonth() + (months > 14 ? 3 : months > 7 ? 2 : 1)))
+    el(s, "text", { x: sx(+d), y: H - 8, "text-anchor": "middle" }, MONTHS[d.getMonth()]);
+  // zone sous zéro (FC plus basse après) teintée
+  el(s, "rect", { x: pad.l, width: W - pad.l - pad.r, y: sy(0), height: sy(lo) - sy(0), fill: "var(--series-3)", opacity: 0.07 });
+  el(s, "polyline", { points: evo.map((e) => `${sx(+e.d).toFixed(1)},${sy(e.v).toFixed(1)}`).join(" "), fill: "none", stroke: "var(--series-1)", "stroke-width": 2.4, "stroke-linejoin": "round" });
+  for (const e of evo) {
+    const c = el(s, "circle", { cx: sx(+e.d).toFixed(1), cy: sy(e.v).toFixed(1), r: 3, fill: "var(--series-1)" });
+    el(c, "title", {}, `coupure au ${fmtDate(e.d)} : ${e.v > 0 ? "+" : ""}${fmtNum(e.v, 1)} bpm après`);
+  }
+  // date choisie au curseur
+  if (+cut > t0 && +cut < t1) {
+    el(s, "line", { x1: sx(+cut), x2: sx(+cut), y1: pad.t, y2: H - pad.b, stroke: "var(--accent)", "stroke-width": 1.5, "stroke-dasharray": "4 3" });
+  }
+  // le plus gros écart (la coupure qui sépare le mieux un avant et un après)
+  const best = evo.reduce((b, e) => (Math.abs(e.v) > Math.abs(b.v) ? e : b));
+  const bx = sx(+best.d), anchor = bx < W * 0.25 ? "start" : bx > W * 0.75 ? "end" : "middle";
+  el(s, "text", { x: bx + (anchor === "start" ? 6 : anchor === "end" ? -6 : 0), y: sy(best.v) + (best.v < 0 ? 4 : -8), "text-anchor": anchor, "font-weight": 600 }, `${best.v > 0 ? "+" : ""}${fmtNum(best.v, 1)} · ${fmtDate(best.d)}`);
+  s.style.cursor = "pointer";
+  s.addEventListener("click", (ev) => {
+    const r = s.getBoundingClientRect();
+    const t = t0 + (((ev.clientX - r.left) * (W / r.width) - pad.l) / (W - pad.l - pad.r)) * (t1 - t0);
+    if (t <= t0 || t >= t1) return;
+    fcSplitDay = dayStr(new Date(t));
+    renderSplit();
+  });
+  box.innerHTML = "";
+  box.appendChild(s);
 }
 let splitRaf = 0;
 $("#fcSplit").addEventListener("input", (e) => {
