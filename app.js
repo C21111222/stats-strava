@@ -2664,13 +2664,16 @@ function estimateZones(group) {
     sv2 = { hr: Math.round(0.935 * hrMax) };
     sv1 = { hr: Math.round(0.851 * hrMax) };
   }
+  // haut de la zone seuil (FC de SV2) choisi à la main : seule cette limite bouge, le milieu SV1-SV2 reste celui estimé
+  const sv2Auto = sv2.hr, sv2Man = run ? SETTINGS?.seuil?.run || null : null;
+  if (sv2Man && sv2Man > sv1.hr && sv2Man < hrMax) sv2 = { ...sv2, hr: sv2Man, manual: true, est: sv2Auto };
   // limites basses de chaque zone (FC) et limites d'allure entre zones, de la plus lente à la plus rapide
   let bounds, paceB = null;
   if (zoneModel === 3) {
     bounds = [0, sv1.hr, sv2.hr + 1];
     if (sv1.p) paceB = [sv1.p, sv2.p];
   } else {
-    const rec = Math.round(0.72 * hrMax), mid = Math.round((sv1.hr + sv2.hr) / 2);
+    const rec = Math.round(0.72 * hrMax), mid = Math.round((sv1.hr + sv2Auto) / 2);
     bounds = [0, rec, sv1.hr, mid + 1, sv2.hr + 1];
     if (sv1.p) {
       const pRec = paceAtHr(curve.fit, rec);
@@ -2738,12 +2741,15 @@ function renderZones() {
   const showPace = group === "run" && !!z.paceB;
   if (document.activeElement !== $("#zonesHrMax")) $("#zonesHrMax").value = z.hrMax;
   $("#zonesHrAuto").hidden = !z.manual;
+  $("#zonesSv2").hidden = $("#zonesSv2Label").hidden = group === "ride";
+  if (document.activeElement !== $("#zonesSv2")) $("#zonesSv2").value = z.sv2.hr;
+  $("#zonesSv2Auto").hidden = !z.sv2.manual;
   const pct = (h) => `${fmtNum((h / z.hrMax) * 100, 0)} % de la FC max`;
   const svTxt = (sv) => `${sv.hr} bpm${showPace && sv.p ? ` · ${fmtPace(sv.p)} /km` : ""}`;
   $("#zonesKpis").innerHTML = [
     ["FC max", `${z.hrMax} bpm`, z.manual ? (STATIC ? "" : `réglée à la main · estimation : ${z.auto ?? "–"}`) : "médiane des 5 plus hautes FC sur 3 ans"],
     ["SV1, seuil aérobie", svTxt(z.sv1), z.sv1.p ? `${pct(z.sv1.hr)} · 80 % de la vitesse critique` : pct(z.sv1.hr)],
-    ["SV2, seuil anaérobie", svTxt(z.sv2), z.cs ? `${pct(z.sv2.hr)} · vitesse critique d'après ${z.cs.from.join(", ")}` : pct(z.sv2.hr)],
+    ["SV2, seuil anaérobie", svTxt(z.sv2), (z.sv2.manual && !STATIC ? `réglé à la main · estimation : ${z.sv2.est} · ` : "") + (z.cs ? `${pct(z.sv2.hr)} · vitesse critique d'après ${z.cs.from.join(", ")}` : pct(z.sv2.hr))],
   ].map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
 
   const b = z.bounds, last = z.n - 1;
@@ -2792,6 +2798,13 @@ async function saveHrMax(v) {
 }
 $("#zonesHrMax").addEventListener("change", (e) => { const v = +e.target.value; if (v >= 140 && v <= 230) saveHrMax(v); });
 $("#zonesHrAuto").addEventListener("click", () => saveHrMax(null));
+async function saveSv2(v) {
+  try { SETTINGS = await api("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ seuil: { run: v } }) }); }
+  catch { return; }
+  renderZones();
+}
+$("#zonesSv2").addEventListener("change", (e) => { const v = +e.target.value; if (v >= 120 && v <= 230) saveSv2(v); });
+$("#zonesSv2Auto").addEventListener("click", () => saveSv2(null));
 $("#zonesModel").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
