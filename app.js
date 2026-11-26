@@ -2609,20 +2609,32 @@ function paceAtHr(fit, h) {
   }
   return null;
 }
+let SETTINGS = null;
+const hrKey = (group) => (group === "ride" ? "ride" : "run");
+// FC max estimée : médiane des 5 plus hautes FC relevées sur 3 ans
+// (la FC max baisse peu d'une année à l'autre, et on n'atteint pas son max à chaque saison ; la médiane écarte les pics du capteur)
+function hrMaxEstimate(fam) {
+  const end = fcEnd(), since = new Date(end); since.setFullYear(since.getFullYear() - 3);
+  let maxes = ALL.filter((a) => fam.includes(a.sport) && a.date <= end && a.date >= since).map((a) => a.max_hr).filter((v) => v > 100 && v < 230);
+  if (maxes.length < 5) maxes = ALL.filter((a) => fam.includes(a.sport)).map((a) => a.max_hr).filter((v) => v > 100 && v < 230);
+  if (maxes.length < 3) return null;
+  maxes.sort((a, b) => b - a);
+  return maxes[Math.min(2, maxes.length - 1)];
+}
 function estimateZones(group) {
   const fam = group === "ride" ? FC_GROUPS.ride.sports : [...FC_GROUPS.run.sports, ...FC_GROUPS.trail.sports];
   const { list, months } = zoneWindow(fam);
-  // FC max : 3e plus haute valeur relevée (une valeur isolée est souvent un pic du capteur)
-  const maxes = list.map((a) => a.max_hr).filter((v) => v > 100 && v < 230).sort((a, b) => b - a);
-  if (maxes.length < 3) return null;
-  const hrMax = maxes[2];
+  const auto = hrMaxEstimate(fam);
+  const manual = SETTINGS?.hrMax?.[hrKey(group)] || null;
+  const hrMax = manual || auto;
+  if (!hrMax) return null;
   const bounds = ZONES.map((z) => Math.round(hrMax * z.lo)).concat(hrMax);
   let curve = null, paces = null;
   if (group !== "ride") {
     curve = hrPaceCurve(list);
     if (curve.fit.length >= 4) paces = bounds.map((h) => paceAtHr(curve.fit, h));
   }
-  return { hrMax, bounds, curve, paces, months };
+  return { hrMax, auto, manual, bounds, curve, paces, months };
 }
 function zoneOf(hr, z) {
   let k = 0;
@@ -2661,6 +2673,7 @@ function renderZoneCurve(z) {
 }
 function renderZones() {
   if (!$("#zonesCard") || !ALL.length) return;
+  if (!SETTINGS) { api("/api/settings").catch(() => ({})).then((s) => { SETTINGS = s || {}; renderZones(); }); return; }
   const group = fcState.group;
   const z = estimateZones(group);
   const label = FC_GROUPS[group].label;
@@ -2671,9 +2684,11 @@ function renderZones() {
     return;
   }
   const showPace = group === "run" && z.paces;
+  if (document.activeElement !== $("#zonesHrMax")) $("#zonesHrMax").value = z.hrMax;
+  $("#zonesHrAuto").hidden = !z.manual;
   const per = z.months ? `des ${z.months} derniers mois` : "de tout l'historique";
   $("#zonesKpis").innerHTML = [
-    ["FC max", `${z.hrMax} bpm`, `3e plus haute FC ${per}`],
+    ["FC max", `${z.hrMax} bpm`, z.manual ? (STATIC ? "" : `réglée à la main · estimation : ${z.auto ?? "–"}`) : "médiane des 5 plus hautes FC sur 3 ans"],
     ...(showPace ? [["Km analysés", fmtNum(z.curve.km), `km de course sur route ${per}, FC et allure réelles`]] : []),
   ].map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
 
@@ -2681,7 +2696,7 @@ function renderZones() {
   const hrTxt = (i) => (i === 4 ? `${b[4]} et plus` : `${b[i]} – ${b[i + 1] - 1}`);
   const paceTxt = (i) => {
     const slow = z.paces[i], fast = z.paces[i + 1]; // FC basse = allure lente
-    if (i === 4 || fast == null) return slow ? `plus vite que ${fmtPace(slow)}` : "–";
+    if (i === 4 || fast == null) return slow ? `plus vite que ${fmtPace(slow)}` : "jamais tenue sur un km";
     if (slow == null) return `plus lent que ${fmtPace(fast)}`;
     return `${fmtPace(fast)} – ${fmtPace(slow)}`;
   };
@@ -2711,3 +2726,12 @@ function renderZones() {
        <p class="muted">${nKm} sorties analysées km par km${nAct ? `, ${nAct} d'après leur FC moyenne seulement (moins précis)` : ""}.</p>`
     : `<p class="empty">Aucune sortie de ${label} avec la FC sur cette période.</p>`;
 }
+
+// FC max choisie à la main : enregistrée par le serveur (et reprise par l'export du site)
+async function saveHrMax(v) {
+  try { SETTINGS = await api("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hrMax: { [hrKey(fcState.group)]: v } }) }); }
+  catch { return; }
+  renderZones();
+}
+$("#zonesHrMax").addEventListener("change", (e) => { const v = +e.target.value; if (v >= 140 && v <= 230) saveHrMax(v); });
+$("#zonesHrAuto").addEventListener("click", () => saveHrMax(null));
