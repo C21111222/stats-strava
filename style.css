@@ -439,3 +439,5 @@ table.zones td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .zones-hr { margin-left: auto; order: 2; }
 .zones-hr input { width: 74px; }
+
+.muted-num { color: var(--text-secondary); font-size: 12px; }

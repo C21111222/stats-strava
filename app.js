@@ -728,7 +728,7 @@ function renderKmStatus() {
   } else { box.hidden = true; return; }
   box.hidden = false;
 }
-const fmtPace = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+const fmtPace = (s) => { s = Math.round(s); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 
 // fin de la période FC : la date choisie (fin de journée) ou maintenant
 const fcEnd = () => (fcState.until ? new Date(fcState.until + "T23:59:59") : new Date());
@@ -2575,13 +2575,14 @@ function zoneWindow(fam) {
 }
 // courbe FC selon l'allure, km par km : médiane par tranche de 5 s/km, rendue décroissante (moyennes adjacentes regroupées)
 function hrPaceCurve(list) {
-  const bins = new Map();
+  const bins = new Map(), raw = [];
   for (const a of list) {
     if (!ROAD.includes(a.sport)) continue;
     for (const s of SPLITS?.[a.id]?.splits || []) {
       if (s.k === 1 || s.d < 800 || !s.hr || !s.gd) continue; // 1er km : la FC n'est pas encore montée
       const p = (s.t / s.gd) * 1000;
       if (p < 150 || p > 480) continue;
+      raw.push({ p, hr: s.hr });
       const b = Math.floor(p / 5) * 5;
       if (!bins.has(b)) bins.set(b, []);
       bins.get(b).push(s.hr);
@@ -2599,15 +2600,19 @@ function hrPaceCurve(list) {
     } else i++;
   }
   const fit = blocks.flatMap((b) => b.items.map((q) => ({ ...q, fit: b.v })));
-  return { pts, fit, km: pts.reduce((t, q) => t + q.n, 0) };
+  return { pts, fit, raw, km: raw.length };
 }
-// allure à laquelle la FC réelle atteint une valeur donnée (interpolation sur la courbe lissée)
-function paceAtHr(fit, h) {
-  for (let i = 0; i < fit.length - 1; i++) {
-    const a = fit[i], b = fit[i + 1];
-    if (a.fit >= h && b.fit <= h && a.fit !== b.fit) return a.p + ((a.fit - h) / (a.fit - b.fit)) * (b.p - a.p);
-  }
-  return null;
+// allure des km réellement courus dans chaque zone : médiane et moitié centrale (25 % – 75 %)
+// (on n'inverse pas la courbe : à allure égale, la FC monte avec la durée de l'effort, la Z5 s'atteint en fin de course plus qu'en allant plus vite)
+function pacesByZone(raw, bounds) {
+  const by = [[], [], [], [], []];
+  for (const q of raw) { let k = 0; for (let i = 1; i < 5; i++) if (q.hr >= bounds[i]) k = i; by[k].push(q.p); }
+  return by.map((v) => {
+    if (v.length < 3) return { n: v.length };
+    v.sort((x, y) => x - y);
+    const at = (f) => v[Math.floor(f * (v.length - 1))];
+    return { n: v.length, med: at(0.5), lo: at(0.25), hi: at(0.75) };
+  });
 }
 let SETTINGS = null;
 const hrKey = (group) => (group === "ride" ? "ride" : "run");
@@ -2632,7 +2637,7 @@ function estimateZones(group) {
   let curve = null, paces = null;
   if (group !== "ride") {
     curve = hrPaceCurve(list);
-    if (curve.fit.length >= 4) paces = bounds.map((h) => paceAtHr(curve.fit, h));
+    if (curve.raw.length >= 30) paces = pacesByZone(curve.raw, bounds);
   }
   return { hrMax, auto, manual, bounds, curve, paces, months };
 }
@@ -2648,26 +2653,25 @@ function renderZoneCurve(z) {
   const s = svg(W, H);
   const pts = z.curve.fit;
   const x0 = pts[0].p, x1 = pts.at(-1).p;
-  const yLo = Math.min(z.bounds[1] - 8, ...pts.map((q) => q.hr)), yHi = z.hrMax + 2;
+  const yLo = Math.min(z.bounds[1] - 8, ...pts.map((q) => q.hr)), yHi = Math.max(z.hrMax + 2, ...z.curve.raw.map((q) => q.hr));
   const sx = (p) => pad.l + ((p - x0) / (x1 - x0)) * (W - pad.l - pad.r);
   const sy = (h) => H - pad.b - ((h - yLo) / (yHi - yLo)) * (H - pad.t - pad.b);
   // bandes des zones
   for (let i = 0; i < 5; i++) {
     const top = Math.min(yHi, i === 4 ? yHi : z.bounds[i + 1]), bot = Math.max(yLo, z.bounds[i]);
     if (top <= bot) continue;
-    el(s, "rect", { x: pad.l, width: W - pad.l - pad.r, y: sy(top), height: sy(bot) - sy(top), fill: `var(--seq-${i + 1})`, opacity: 0.22 });
+    el(s, "rect", { x: pad.l, width: W - pad.l - pad.r, y: sy(top), height: sy(bot) - sy(top), fill: `var(--seq-${i + 1})`, opacity: 0.12 });
     el(s, "text", { x: W - pad.r - 4, y: sy(top) + 13, "text-anchor": "end", "font-weight": 600 }, `Z${i + 1}`);
   }
   for (let h = Math.ceil(yLo / 10) * 10; h <= yHi; h += 10) el(s, "text", { x: pad.l - 6, y: sy(h) + 4, "text-anchor": "end" }, h);
   for (let p = Math.ceil(x0 / 30) * 30; p <= x1; p += 30) el(s, "text", { x: sx(p), y: H - pad.b + 16, "text-anchor": "middle" }, fmtPace(p));
   el(s, "text", { x: pad.l + (W - pad.l - pad.r) / 2, y: H - 4, "text-anchor": "middle" }, "allure à plat équivalente (min/km)");
-  // médianes réelles (taille = nombre de km), puis courbe lissée
-  const maxN = Math.max(...pts.map((q) => q.n));
-  for (const q of pts) {
-    const c = el(s, "circle", { cx: sx(q.p), cy: sy(q.hr), r: 2 + 4 * Math.sqrt(q.n / maxN), fill: "var(--series-1)", "fill-opacity": 0.55 });
-    el(c, "title", {}, `${fmtPace(q.p - 2.5)} à ${fmtPace(q.p + 2.5)} /km : FC médiane ${Math.round(q.hr)} (${q.n} km)`);
+  // chaque km, coloré selon sa zone
+  for (const q of z.curve.raw) {
+    if (q.p < x0 || q.p > x1 || q.hr < yLo || q.hr > yHi) continue;
+    el(s, "circle", { cx: sx(q.p).toFixed(1), cy: sy(q.hr).toFixed(1), r: 2.2, fill: `var(--seq-${zoneOf(q.hr, z) + 1})`, "fill-opacity": 0.75 });
   }
-  el(s, "polyline", { points: pts.map((q) => `${sx(q.p).toFixed(1)},${sy(q.fit).toFixed(1)}`).join(" "), fill: "none", stroke: "var(--series-1)", "stroke-width": 2.2, "stroke-linejoin": "round" });
+  el(s, "polyline", { points: pts.map((q) => `${sx(q.p).toFixed(1)},${sy(q.fit).toFixed(1)}`).join(" "), fill: "none", stroke: "var(--text-primary)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-opacity": 0.8 });
   box.innerHTML = "";
   box.appendChild(s);
 }
@@ -2695,10 +2699,8 @@ function renderZones() {
   const b = z.bounds;
   const hrTxt = (i) => (i === 4 ? `${b[4]} et plus` : `${b[i]} – ${b[i + 1] - 1}`);
   const paceTxt = (i) => {
-    const slow = z.paces[i], fast = z.paces[i + 1]; // FC basse = allure lente
-    if (i === 4 || fast == null) return slow ? `plus vite que ${fmtPace(slow)}` : "jamais tenue sur un km";
-    if (slow == null) return `plus lent que ${fmtPace(fast)}`;
-    return `${fmtPace(fast)} – ${fmtPace(slow)}`;
+    const q = z.paces[i];
+    return q.med ? `${fmtPace(q.med)} <span class="muted-num">(${fmtPace(q.lo)} – ${fmtPace(q.hi)}) · ${q.n} km</span>` : q.n ? `${q.n} km` : "aucun km";
   };
 
   // temps passé par zone sur la période du bloc FC : détail au km quand il existe, sinon FC moyenne de la sortie
@@ -2713,7 +2715,7 @@ function renderZones() {
   }
   const tot = secs.reduce((t, v) => t + v, 0);
   const maxS = Math.max(...secs, 1);
-  $("#zonesTable").innerHTML = `<table class="zones"><thead><tr><th>Zone</th><th>% FC max</th><th>FC (bpm)</th>${showPace ? "<th>Allure réelle (/km)</th>" : ""}<th>Temps sur la période</th></tr></thead><tbody>` +
+  $("#zonesTable").innerHTML = `<table class="zones"><thead><tr><th>Zone</th><th>% FC max</th><th>FC (bpm)</th>${showPace ? "<th>Allure des km dans la zone</th>" : ""}<th>Temps sur la période</th></tr></thead><tbody>` +
     ZONES.map((zz, i) => `<tr><td><span class="zdot" style="background:var(--seq-${i + 1})"></span><b>Z${i + 1}</b> ${zz.name}</td><td class="num">${Math.round(zz.lo * 100)} – ${Math.round(zz.hi * 100)} %</td><td class="num">${hrTxt(i)}</td>${showPace ? `<td class="num">${paceTxt(i)}</td>` : ""}
       <td><div class="zbar"><span class="trk"><i style="width:${((secs[i] / maxS) * 100).toFixed(1)}%;background:var(--seq-${i + 1})"></i></span><span>${tot ? fmtNum((secs[i] / tot) * 100, 0) + " %" : "–"}${secs[i] ? " · " + hhmm(secs[i]) : ""}</span></div></td></tr>`).join("") +
     "</tbody></table>";
