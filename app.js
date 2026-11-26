@@ -2728,6 +2728,7 @@ function renderZones() {
   const b = z.bounds;
   const hrTxt = (i) => (i === 4 ? `${b[4]} et plus` : `${b[i]} – ${b[i + 1] - 1}`);
   const paceTxt = (i) => {
+    if (i === 4) return "–"; // la Z5 s'atteint par la durée de l'effort, pas par une allure
     const q = z.paces[i];
     return q.med ? `${fmtPace(q.med)} <span class="muted-num">(${fmtPace(q.lo)} – ${fmtPace(q.hi)}) · ${q.n} km</span>` : q.n ? `${q.n} km` : "aucun km";
   };
