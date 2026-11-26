@@ -229,12 +229,6 @@ function renderKpis(list) {
   const tiles = [
     ["Activités", fmtNum(list.length), `${fmtNum(list.length / weeks, 1)} par semaine`],
     ["Distance", fmtNum(km, 0) + " km", `${fmtNum(km / weeks, 1)} km par semaine`],
-    // course et vélo : sur la période choisie, quels que soient les sports cochés
-    ...[["Course", GOAL_SPORTS.run.sports], ["Vélo", GOAL_SPORTS.ride.sports]].map(([label, sports]) => {
-      const l = ALL.filter((a) => sports.includes(a.sport) && a.date >= from && a.date <= to);
-      const k = l.reduce((t, a) => t + a.distance, 0) / 1000;
-      return [`${label} par semaine`, fmtNum(k / weeks, 1) + " km", `${fmtNum(k, 0)} km en ${fmtNum(l.length)} sortie${l.length > 1 ? "s" : ""}`];
-    }),
     ["Temps en mouvement", fmtHours(h), `${fmtHours(h / weeks)} par semaine`],
     ["Dénivelé +", fmtNum(sum((a) => a.elevation || 0), 0) + " m", `${fmtNum(sum((a) => a.elevation || 0) / 8849, 1)} × l'Everest`],
     ["Jours actifs", fmtNum(days.length), `plus longue série : ${best} j`],
@@ -2503,10 +2497,24 @@ function renderBilan() {
   const evol = kmP ? ((km - kmP) / kmP) * 100 : null;
   const tile = (big, label, sub = "", cls = "") => `<div class="b-tile ${cls}"><div class="b-label">${label}</div><div class="b-big">${big}</div>${sub ? `<div class="b-sub">${sub}</div>` : ""}</div>`;
   const earth = km / 40075;
+  // km par semaine en course à pied et à vélo : sur l'année entière, ou sur les semaines déjà écoulées pour l'année en cours
+  const weeksOf = (yy) => {
+    const start = new Date(yy, 0, 1), end = new Date(yy + 1, 0, 1), now = new Date();
+    return ((now < end ? Math.max(now - start, 86400000) : end - start) / 86400000) / 7;
+  };
+  const perWeek = (X, yy, grp) => sum(X.filter((a) => GOAL_SPORTS[grp].sports.includes(a.sport)), (a) => a.distance) / 1000 / weeksOf(yy);
+  const weekTile = (grp, label) => {
+    const v = perWeek(L, y, grp), vp = P.length ? perWeek(P, y - 1, grp) : 0;
+    if (!v && !vp) return "";
+    const tot = sum(L.filter((a) => GOAL_SPORTS[grp].sports.includes(a.sport)), (a) => a.distance) / 1000;
+    return tile(fmtNum(v, 1) + " km", label, `${fmtNum(tot, 0)} km en ${fmtNum(weeksOf(y), 0)} semaines${vp ? ` · ${fmtNum(vp, 1)} km par semaine en ${y - 1}` : ""}`);
+  };
   $("#bilan").innerHTML = `
     <div class="b-hero"><div class="b-label">Mon année ${y}</div><div class="b-huge">${fmtNum(km, 0)} km</div>
       <div class="b-sub">${fmtNum(L.length)} sorties · ${fmtHours(hours)} · ${fmtNum(dplus, 0)} m de D+${evol != null ? ` · ${evol >= 0 ? "+" : ""}${fmtNum(evol, 0)} % par rapport à ${y - 1}` : ""}</div></div>
     <div class="b-grid">
+      ${weekTile("run", "par semaine en course à pied")}
+      ${weekTile("ride", "par semaine à vélo")}
       ${tile(fmtNum(dset.length), "jours actifs", `soit ${fmtNum((dset.length / 365) * 100, 0)} % des jours de l'année`)}
       ${tile(best + " j", "plus longue série", "de jours d'affilée avec une sortie")}
       ${tile(MONTHS[bm], "mois le plus chargé", `${fmtNum(months[bm], 0)} km`)}
