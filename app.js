@@ -785,6 +785,7 @@ function renderFc() {
   if (KM && !SPLITS) { loadSplits(); return; }
   renderKmStatus();
   renderDrift();
+  renderZones();
   const { g, pts, skipped } = fcData();
   const flatOn = g.pace && (g.effort || KM);
   $("#fcFlatWrap").hidden = !flatOn;
@@ -1378,6 +1379,7 @@ async function loadDetails() {
   DETAILS = r.details; DETJOB = r.detJob;
   renderDetails(filtered());
   renderBilan();
+  renderZones();
   clearTimeout(detPoll);
   if (DETJOB.running) detPoll = setTimeout(loadDetails, 15000);
 }
@@ -2547,4 +2549,120 @@ function neutralTexts(firstname) {
   new MutationObserver((muts) => {
     for (const m of muts) for (const n of m.addedNodes) n.nodeType === 3 ? fix(n) : n.nodeType === 1 && walk(n);
   }).observe(document.body, { childList: true, subtree: true });
+}
+
+// ---------- zones d'entraînement estimées (méthode Friel, calées sur la FC au seuil) ----------
+const ZONE_DEF = {
+  // seuils bas de Z2..Z5 en % de la FC au seuil ; allure : multiple du temps au km au seuil (plus grand = plus lent)
+  run: { hr: [0, 0.85, 0.90, 0.95, 1.00], pace: [[1.29, Infinity], [1.14, 1.29], [1.06, 1.14], [0.99, 1.06], [0, 0.99]] },
+  ride: { hr: [0, 0.81, 0.90, 0.94, 1.00] },
+};
+const ZONE_NAMES = ["Récupération", "Endurance", "Tempo", "Seuil", "VO2max"];
+function estimateZones(group) {
+  const fam = group === "ride" ? FC_GROUPS.ride.sports : [...FC_GROUPS.run.sports, ...FC_GROUPS.trail.sports];
+  const end = fcEnd();
+  const back = (m) => { const d = new Date(end); d.setMonth(d.getMonth() - m); return d; };
+  const pick = (m) => ALL.filter((a) => fam.includes(a.sport) && a.date <= end && (m == null || a.date >= back(m)));
+  let recent = pick(12);
+  if (recent.filter((a) => a.max_hr).length < 10) recent = pick(24);
+  if (recent.filter((a) => a.max_hr).length < 10) recent = pick(null);
+  // FC max : 3e plus haute valeur (une valeur isolée est souvent un pic du capteur)
+  const maxes = recent.map((a) => a.max_hr).filter((v) => v > 100 && v < 230).sort((a, b) => b - a);
+  if (maxes.length < 3) return null;
+  const hrMax = maxes[2];
+  // FC au seuil : la plus haute FC moyenne tenue 20 à 75 min…
+  const cands = recent.filter((a) => a.avg_hr && a.moving_time >= 1200 && a.moving_time <= 4500).map((a) => ({ v: a.avg_hr, a }));
+  // … ou, avec le détail au km, le meilleur bloc de 5 km d'affilée (au moins 20 min, 1er km écarté)
+  for (const a of recent) {
+    const sp = SPLITS?.[a.id]?.splits?.filter((x) => x.d >= 800 && x.hr > 0);
+    if (!sp || sp.length < 6) continue;
+    for (let i = 1; i + 5 <= sp.length; i++) {
+      const blk = sp.slice(i, i + 5), t = blk.reduce((u, x) => u + x.t, 0);
+      if (t >= 1200) cands.push({ v: blk.reduce((u, x) => u + x.hr * x.t, 0) / t, a });
+    }
+  }
+  // une valeur par sortie, puis la 2e meilleure (pour écarter une sortie aberrante)
+  const bestBy = new Map();
+  for (const c of cands) if (!bestBy.has(c.a.id) || c.v > bestBy.get(c.a.id).v) bestBy.set(c.a.id, c);
+  const sorted = [...bestBy.values()].sort((x, y) => y.v - x.v);
+  const raw = sorted[1] || sorted[0];
+  let lthr = raw ? raw.v : 0, lthrSrc = raw?.a || null, lthrNote = "";
+  // garde-fous : sans sortie dure, la valeur brute sous-estime le seuil
+  if (lthr < hrMax * 0.85) { lthr = hrMax * 0.87; lthrNote = "pas d'effort soutenu : 87 % de la FC max"; lthrSrc = null; }
+  if (lthr > hrMax * 0.95) lthr = hrMax * 0.95;
+  lthr = Math.round(lthr);
+  // allure au seuil (course) : l'allure tenable environ 1 h, ramenée par Riegel depuis les meilleurs efforts
+  let pace = null, paceSrc = null;
+  if (group !== "ride") {
+    const DIST = { "5K": 5000, "10K": 10000, "15K": 15000, "10 mile": 16093, "20K": 20000, "Half-Marathon": 21097 };
+    const tryPerf = (d, t, a) => {
+      if (d < 3000 || t <= 0) return;
+      const D = d * (3600 / t) ** (1 / 1.06); // distance couverte en 1 h au même niveau
+      const p = 3600 / (D / 1000);
+      if (p > 150 && (!pace || p < pace)) { pace = p; paceSrc = a; }
+    };
+    for (const a of recent) {
+      if (a.sport === "TrailRun") continue; // le dénivelé fausse l'allure
+      for (const e of DETAILS?.[a.id]?.best || []) if (DIST[e.name]) tryPerf(DIST[e.name], e.t, a);
+      if (a.moving_time >= 1200 && a.distance >= 3000) tryPerf(a.distance, a.moving_time, a);
+    }
+  }
+  return { hrMax, lthr, lthrSrc, lthrNote, pace, paceSrc };
+}
+const hhmm = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${String(Math.round((s % 3600) / 60)).padStart(2, "0")}` : `${Math.round(s / 60)} min`);
+function zoneOf(hr, z, def) {
+  let k = 0;
+  for (let i = 1; i < 5; i++) if (hr >= z.lthr * def.hr[i]) k = i;
+  return k;
+}
+function renderZones() {
+  if (!$("#zonesCard") || !ALL) return;
+  const group = fcState.group;
+  const def = group === "ride" ? ZONE_DEF.ride : ZONE_DEF.run;
+  const z = estimateZones(group);
+  const label = FC_GROUPS[group].label;
+  $("#zonesTitle").textContent = `Zones d'entraînement estimées (${group === "ride" ? "vélo" : "course à pied"})`;
+  if (!z) {
+    $("#zonesKpis").innerHTML = ""; $("#zonesTime").innerHTML = "";
+    $("#zonesTable").innerHTML = `<p class="empty">Pas assez de sorties de ${label} avec la FC pour estimer les zones.</p>`;
+    return;
+  }
+  const showPace = group !== "ride" && z.pace;
+  $("#zonesKpis").innerHTML = [
+    ["FC max estimée", `${z.hrMax} bpm`, "3e plus haute FC des 12 derniers mois"],
+    ["FC au seuil", `${z.lthr} bpm`, z.lthrNote || `${fmtNum((z.lthr / z.hrMax) * 100, 0)} % de la FC max${z.lthrSrc ? ` · d'après ${dlink(z.lthrSrc, esc(z.lthrSrc.name))}` : ""}`],
+    ...(showPace ? [["Allure au seuil", `${fmtPace(z.pace)} /km`, `tenable environ 1 h${z.paceSrc ? ` · d'après ${dlink(z.paceSrc, esc(z.paceSrc.name))}` : ""}`]] : []),
+  ].map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
+
+  const lo = (i) => Math.round(z.lthr * def.hr[i]);
+  const hrTxt = (i) => (i === 0 ? `moins de ${lo(1)}` : i === 4 ? `${lo(4)} et plus` : `${lo(i)} – ${lo(i + 1) - 1}`);
+  const paceTxt = (i) => {
+    const [a, b] = def.pace[i];
+    if (b === Infinity) return `plus lent que ${fmtPace(z.pace * a)}`;
+    if (a === 0) return `plus rapide que ${fmtPace(z.pace * b)}`;
+    return `${fmtPace(z.pace * b)} – ${fmtPace(z.pace * a)}`;
+  };
+
+  // temps passé par zone sur la période du bloc FC : détail au km quand il existe, sinon FC moyenne de la sortie
+  const since = new Date(fcState.since + "T00:00"), until = fcEnd();
+  const secs = [0, 0, 0, 0, 0];
+  let nKm = 0, nAct = 0;
+  for (const a of ALL) {
+    if (!FC_GROUPS[group].sports.includes(a.sport) || a.date < since || a.date > until || !a.avg_hr) continue;
+    const sp = SPLITS?.[a.id]?.splits?.filter((x) => x.hr > 0 && x.t > 0);
+    if (sp?.length) { nKm++; for (const x of sp) secs[zoneOf(x.hr, z, def)] += x.t; }
+    else { nAct++; secs[zoneOf(a.avg_hr, z, def)] += a.moving_time; }
+  }
+  const tot = secs.reduce((t, v) => t + v, 0);
+  const maxS = Math.max(...secs, 1);
+  $("#zonesTable").innerHTML = `<table class="zones"><thead><tr><th>Zone</th><th>FC (bpm)</th>${showPace ? "<th>Allure (/km)</th>" : ""}<th>Temps sur la période</th></tr></thead><tbody>` +
+    ZONE_NAMES.map((n, i) => `<tr><td><span class="zdot" style="background:var(--seq-${i + 1})"></span><b>Z${i + 1}</b> ${n}</td><td class="num">${hrTxt(i)}</td>${showPace ? `<td class="num">${paceTxt(i)}</td>` : ""}
+      <td><div class="zbar"><span class="trk"><i style="width:${((secs[i] / maxS) * 100).toFixed(1)}%;background:var(--seq-${i + 1})"></i></span><span>${tot ? fmtNum((secs[i] / tot) * 100, 0) + " %" : "–"}${secs[i] ? " · " + hhmm(secs[i]) : ""}</span></div></td></tr>`).join("") +
+    "</tbody></table>";
+  $("#zonesTimeTitle").textContent = `Répartition du temps ${fcRangeTxt()}`;
+  $("#zonesTime").innerHTML = tot
+    ? `<div class="zstack">${secs.map((v, i) => (v ? `<i style="flex:${v};background:var(--seq-${i + 1})" title="Z${i + 1} : ${fmtNum((v / tot) * 100, 0)} %"></i>` : "")).join("")}</div>
+       <div class="legend">${ZONE_NAMES.map((n, i) => `<span><i style="background:var(--seq-${i + 1});height:8px;width:8px"></i>Z${i + 1} ${fmtNum((secs[i] / tot) * 100, 0)} %</span>`).join("")}</div>
+       <p class="muted">${nKm} sorties analysées km par km${nAct ? `, ${nAct} d'après leur FC moyenne seulement (moins précis)` : ""}.</p>`
+    : `<p class="empty">Aucune sortie de ${label} avec la FC sur cette période.</p>`;
 }
