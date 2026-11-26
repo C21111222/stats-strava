@@ -229,6 +229,12 @@ function renderKpis(list) {
   const tiles = [
     ["Activités", fmtNum(list.length), `${fmtNum(list.length / weeks, 1)} par semaine`],
     ["Distance", fmtNum(km, 0) + " km", `${fmtNum(km / weeks, 1)} km par semaine`],
+    // course et vélo : sur la période choisie, quels que soient les sports cochés
+    ...[["Course", GOAL_SPORTS.run.sports], ["Vélo", GOAL_SPORTS.ride.sports]].map(([label, sports]) => {
+      const l = ALL.filter((a) => sports.includes(a.sport) && a.date >= from && a.date <= to);
+      const k = l.reduce((t, a) => t + a.distance, 0) / 1000;
+      return [`${label} par semaine`, fmtNum(k / weeks, 1) + " km", `${fmtNum(k, 0)} km en ${fmtNum(l.length)} sortie${l.length > 1 ? "s" : ""}`];
+    }),
     ["Temps en mouvement", fmtHours(h), `${fmtHours(h / weeks)} par semaine`],
     ["Dénivelé +", fmtNum(sum((a) => a.elevation || 0), 0) + " m", `${fmtNum(sum((a) => a.elevation || 0) / 8849, 1)} × l'Everest`],
     ["Jours actifs", fmtNum(days.length), `plus longue série : ${best} j`],
