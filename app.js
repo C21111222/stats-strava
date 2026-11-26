@@ -785,6 +785,7 @@ function renderFc() {
   if (KM && !SPLITS) { loadSplits(); return; }
   renderKmStatus();
   renderDrift();
+  renderSplit();
   renderZones();
   const { g, pts, skipped } = fcData();
   const flatOn = g.pace && (g.effort || KM);
@@ -2811,4 +2812,99 @@ $("#zonesModel").addEventListener("click", (e) => {
   zoneModel = +b.dataset.m;
   try { localStorage.setItem("zoneModel", String(zoneModel)); } catch {}
   renderZones();
+});
+
+// ---------- FC avant / après une date choisie au curseur ----------
+// On coupe les points du bloc FC (km ou sorties, mêmes réglages) en deux, puis on compare la FC à allure égale :
+// tranche d'allure par tranche d'allure, écart des FC médianes, pondéré par le plus petit des deux effectifs.
+let fcSplitDay = null; // date de coupure (AAAA-MM-JJ)
+const dayStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function renderSplit() {
+  const box = $("#fcSplitChart");
+  if (!box) return;
+  const { g, pts } = fcData();
+  const KM = fcState.detail === "km";
+  const start = new Date(fcState.since + "T00:00"), end = fcEnd();
+  const days = Math.max(1, Math.round((end - start) / 86400000));
+  const slider = $("#fcSplit");
+  slider.min = 1; slider.max = Math.max(1, days - 1);
+  if (!fcSplitDay || fcSplitDay <= fcState.since || new Date(fcSplitDay + "T00:00") >= end) {
+    fcSplitDay = dayStr(new Date(start.getTime() + Math.round(days / 2) * 86400000));
+  }
+  const cut = new Date(fcSplitDay + "T00:00");
+  if (document.activeElement !== slider) slider.value = Math.round((cut - start) / 86400000);
+  $("#fcSplitDate").textContent = fmtDate(cut);
+
+  const before = pts.filter((p) => p.a.date < cut), after = pts.filter((p) => p.a.date >= cut);
+  const unit = KM ? ["km", "km"] : ["sortie", "sorties"];
+  const fmtX = g.pace ? (v) => fmtPace(v) : (v) => fmtNum(v, 0) + " km/h";
+  const w = g.pace ? (KM ? 15 : 20) : 2; // largeur des tranches : 15 s/km, ou 2 km/h
+  const minN = KM ? 5 : 2;
+  const bins = new Map();
+  for (const [side, list] of [["b", before], ["a", after]]) for (const p of list) {
+    const k = Math.floor(p.x / w) * w;
+    if (!bins.has(k)) bins.set(k, { b: [], a: [] });
+    bins.get(k)[side].push(p.y);
+  }
+  const med = (v) => { const s = [...v].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+  const rows = [...bins].sort((x, y) => x[0] - y[0]).map(([k, v]) => ({ k, nb: v.b.length, na: v.a.length, hb: v.b.length ? med(v.b) : null, ha: v.a.length ? med(v.a) : null }));
+  const shared = rows.filter((r) => r.nb >= minN && r.na >= minN);
+  const wsum = shared.reduce((t, r) => t + Math.min(r.nb, r.na), 0);
+  const diff = wsum ? shared.reduce((t, r) => t + (r.ha - r.hb) * Math.min(r.nb, r.na), 0) / wsum : null;
+  const avg = (l) => (l.length ? l.reduce((t, p) => t + p.y, 0) / l.length : null);
+  const sign = (v) => (v > 0 ? "+" : v < 0 ? "−" : "±") + fmtNum(Math.abs(v), 1);
+
+  $("#fcSplitKpis").innerHTML = [
+    ["Avant", before.length ? `${fmtNum(avg(before), 0)} bpm` : "–", `${fmtNum(before.length)} ${unit[before.length > 1 ? 1 : 0]} · FC moyenne`],
+    ["Après", after.length ? `${fmtNum(avg(after), 0)} bpm` : "–", `${fmtNum(after.length)} ${unit[after.length > 1 ? 1 : 0]} · FC moyenne`],
+    ["À allure égale", diff == null ? "–" : `${sign(diff)} bpm`, diff == null ? "pas assez de points communs" : `${diff < -0.5 ? "FC plus basse après" : diff > 0.5 ? "FC plus haute après" : "pas de différence"} · ${shared.length} tranches ${g.pace ? "d'allure" : "de vitesse"} comparées`],
+  ].map(([l, v, s], i) => `<div class="kpi${i === 2 && diff != null ? (diff < -0.5 ? " good" : diff > 0.5 ? " bad" : "") : ""}"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
+
+  if (pts.length < 3) { box.innerHTML = ""; $("#fcSplitTable").innerHTML = ""; return; }
+  // graphique : points des deux périodes, et FC médiane par tranche pour chacune
+  const W = CW(), H = 280, pad = { t: 14, r: 12, b: 34, l: 40 };
+  const s = svg(W, H);
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+  const xmin = Math.min(...xs), xmax = Math.max(...xs);
+  const x0 = g.pace ? xmax : xmin, x1 = g.pace ? xmin : xmax; // allure : le plus rapide à droite
+  const y0 = Math.floor((Math.min(...ys) - 3) / 10) * 10, y1 = Math.ceil((Math.max(...ys) + 3) / 10) * 10;
+  const sx = (v) => pad.l + ((v - x0) / (x1 - x0 || 1)) * (W - pad.l - pad.r);
+  const sy = (v) => H - pad.b - ((v - y0) / (y1 - y0)) * (H - pad.t - pad.b);
+  for (let v = y0; v <= y1; v += 10) {
+    el(s, "line", { x1: pad.l, x2: W - pad.r, y1: sy(v), y2: sy(v), class: v === y0 ? "base-line" : "grid-line" });
+    el(s, "text", { x: pad.l - 6, y: sy(v) + 4, "text-anchor": "end" }, v);
+  }
+  const tick = g.pace ? (xmax - xmin > 240 ? 60 : 30) : (xmax - xmin > 20 ? 5 : 2);
+  for (let v = Math.ceil(xmin / tick) * tick; v <= xmax; v += tick) el(s, "text", { x: sx(v), y: H - pad.b + 16, "text-anchor": "middle" }, g.pace ? fmtPace(v) : v);
+  el(s, "text", { x: W - pad.r, y: H - 4, "text-anchor": "end" }, g.pace ? "allure · plus rapide →" : "vitesse (km/h) →");
+  const COL = { b: "var(--other)", a: "var(--accent)" };
+  for (const [side, list] of [["b", before], ["a", after]]) for (const p of list)
+    el(s, "circle", { cx: sx(p.x).toFixed(1), cy: sy(p.y).toFixed(1), r: KM ? 1.8 : 3, fill: COL[side], "fill-opacity": side === "a" ? 0.45 : 0.35 });
+  for (const side of ["b", "a"]) {
+    const line = rows.filter((r) => r[side === "b" ? "nb" : "na"] >= minN).map((r) => `${sx(r.k + w / 2).toFixed(1)},${sy(side === "b" ? r.hb : r.ha).toFixed(1)}`);
+    if (line.length > 1) el(s, "polyline", { points: line.join(" "), fill: "none", stroke: COL[side], "stroke-width": side === "a" ? 2.6 : 2.2, "stroke-linejoin": "round" });
+  }
+  box.innerHTML = "";
+  box.appendChild(s);
+  const leg = document.createElement("div");
+  leg.className = "legend";
+  leg.innerHTML = `<span><i style="background:var(--other);height:3px"></i>avant le ${fmtDate(cut)}</span><span><i style="background:var(--accent);height:3px"></i>à partir du ${fmtDate(cut)}</span><span class="muted">trait : FC médiane par tranche ${g.pace ? "d'allure" : "de vitesse"}</span>`;
+  box.appendChild(leg);
+
+  // tableau des tranches comparées
+  const lab = (k) => (g.pace ? `${fmtPace(k + w)} – ${fmtPace(k)}` : `${k} – ${k + w} km/h`);
+  const list = g.pace ? [...shared].reverse() : shared;
+  $("#fcSplitTable").innerHTML = shared.length
+    ? `<table><thead><tr><th>${g.pace ? "Allure (/km)" : "Vitesse"}</th><th>Avant</th><th>Après</th><th>Écart</th></tr></thead><tbody>` +
+      list.map((r) => { const d = r.ha - r.hb; return `<tr><td>${lab(r.k)}</td><td class="num">${fmtNum(r.hb, 0)} <span class="muted-num">(${r.nb} ${unit[1]})</span></td><td class="num">${fmtNum(r.ha, 0)} <span class="muted-num">(${r.na} ${unit[1]})</span></td><td class="num ${d < -0.5 ? "pos" : d > 0.5 ? "neg" : ""}">${sign(d)}</td></tr>`; }).join("") +
+      "</tbody></table>"
+    : `<p class="empty">Pas assez de ${unit[1]} à la même allure des deux côtés du ${fmtDate(cut)}.</p>`;
+}
+let splitRaf = 0;
+$("#fcSplit").addEventListener("input", (e) => {
+  const start = new Date(fcState.since + "T00:00");
+  fcSplitDay = dayStr(new Date(start.getTime() + +e.target.value * 86400000));
+  $("#fcSplitDate").textContent = fmtDate(new Date(fcSplitDay + "T00:00"));
+  cancelAnimationFrame(splitRaf);
+  splitRaf = requestAnimationFrame(renderSplit);
 });

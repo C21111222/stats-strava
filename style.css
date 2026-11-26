@@ -443,3 +443,11 @@ table.zones td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .muted-num { color: var(--text-secondary); font-size: 12px; }
 
 #zonesKpis .kpi .v { white-space: normal; overflow: visible; text-overflow: clip; }
+
+/* ---------- FC avant / après ---------- */
+.split-ctl { display: flex; align-items: center; gap: 14px; margin: 4px 0 16px; }
+.split-ctl input[type=range] { flex: 1; accent-color: var(--accent); min-width: 0; }
+.split-date { font-weight: 600; min-width: 110px; text-align: right; font-variant-numeric: tabular-nums; }
+.kpi.good .v, td.pos { color: var(--series-3); }
+.kpi.bad .v, td.neg { color: var(--series-8); }
+#fcSplitTable { margin-top: 12px; }
